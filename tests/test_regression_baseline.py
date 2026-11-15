@@ -51,7 +51,10 @@ def test_existing_endpoints_untouched(site):
     assert client.get('/api/session').status_code == 200
     assert client.get('/api/analytics/summary').status_code == 200
     assert client.get('/api/chapters/chapter-1/entries').status_code == 200
-    assert client.get('/api/chapters/chapter-24/entries').status_code == 404
+    # Chapter 24 shipped in the 2026-11 production-readiness pass; unknown
+    # chapters must still 404 rather than leaking a book index.
+    assert client.get('/api/chapters/chapter-24/entries').status_code == 200
+    assert client.get('/api/chapters/chapter-99/entries').status_code == 404
     assert client.get('/api/wishes').status_code == 200
 
 

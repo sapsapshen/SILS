@@ -11,6 +11,8 @@ on:
       - 'tests/**'
       - 'index.html'
       - 'login.html'
+      - '404.html'
+      - 'NOTICE'
       - 'accounts.py'
       - 'favicon.svg'
       - 'assets/**'

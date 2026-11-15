@@ -23,7 +23,7 @@
       "shortTitle": "业务系统实践"
     },
     {
-      "title": "第六篇　AIGC 特別篇",
+      "title": "第六篇　AIGC 特别篇",
       "shortTitle": "AIGC 特别篇"
     },
     {
@@ -225,7 +225,7 @@
       "title": "开源模型也能做出像样的 AI 视频吗？",
       "partIndex": 5,
       "file": "source-html/chapter-24.html",
-      "status": "pending",
+      "status": "ready",
       "discussionId": "chapter-23"
     },
     {

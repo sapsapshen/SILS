@@ -1,0 +1,102 @@
+[
+  {
+    "id": "ch24-ex01",
+    "chapter": "chapter-24",
+    "type": "predict",
+    "difficulty": 2,
+    "minutes": 5,
+    "objective": "Juzgar los límites del vídeo abierto",
+    "prompt": "¿Qué afirmaciones coinciden con este capítulo? (selección múltiple)\n\nA. H3-Base puede generar audio y vídeo en 768p en local, y un segmento tiene un límite de 15 segundos\nB. H3 usa Apache-2.0, así que el uso comercial no tiene restricciones adicionales\nC. El Context-IR para entradas complejas y el proceso de regeneración a 2K son totalmente abiertos\nD. Una pieza final de 30 segundos se puede unir con dos clips de 15 segundos como máximo, pero la costura debe diseñarse de antemano\nE. El coste debe medirse en minutos de GPU por clip final utilizable, incluidas las tomas descartadas",
+    "checks": [
+      {
+        "kind": "output_choice",
+        "correct": [
+          "A",
+          "D",
+          "E"
+        ],
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "A, D, E. La capacidad local de H3-Base es 768p, de 4 a 15 segundos y 24 fps con audio estéreo. B se equivoca en la licencia: H3 usa la MiniMax H3 Community License, no Apache-2.0. C se equivoca en el alcance: Context-IR y la regeneración a 2K no están totalmente abiertos.",
+    "explanation": "La pregunta separa lo que el modelo puede hacer de lo que realmente está abierto.\n\nA es la descripción del capítulo sobre H3-Base: 768p en local, de 4 a 15 segundos. D coincide con el proceso de costuras de la sección 3: el límite de un segmento es 15 segundos, así que 30 segundos obligan a unir, y la costura debe diseñarse. E coincide con la regla de coste de la sección 4: no cuentes solo la generación que salió bien; cuenta los 3 a 5 candidatos que se descartan.\n\nB y C son dos malas lecturas habituales. Los pesos abiertos no son Apache-2.0, y no significan que el proceso de entrenamiento, Context-IR y el proceso de 2K estén todos abiertos. Antes de usar un modelo en un proyecto comercial, lee la licencia y comprueba qué componentes se publicaron de verdad, no solo la palabra «abierto».\n\nLímite de corrección: las letras elegidas deben coincidir exactamente con la respuesta de referencia; cualquier letra de más o de menos es un error."
+  },
+  {
+    "id": "ch24-ex02",
+    "chapter": "chapter-24",
+    "type": "reflect",
+    "difficulty": 3,
+    "minutes": 8,
+    "objective": "Escribir hoja de rodaje y presupuesto de 30 s",
+    "prompt": "Vas a hacer con H3 un clip docente de 30 segundos sobre «cómo escribir un prompt claro para un modelo abierto». Escribe: (1) en cuántos planos de 15 segundos como máximo lo dividirás, con duración, cámara, acción del sujeto, entorno y luz, sonido y prohibiciones para cada uno; (2) cómo diseñarás las costuras; (3) si cada plano necesita 3 candidatos para dar 1 toma usable y cada toma cuesta 5 minutos, cuántos minutos de GPU necesitará aproximadamente el clip.",
+    "checks": [
+      {
+        "kind": "self_assessed",
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": true,
+      "criteria": "Si divide los 30 segundos en planos de 15 segundos como máximo; si cada plano cubre duración, cámara, acción del sujeto, entorno y luz, sonido y prohibiciones; si explica cómo el último fotograma de un plano sirve de referencia al siguiente; si incluye los candidatos descartados en una estimación de minutos de GPU reproducible."
+    },
+    "reference": "División de planos: al menos dos, por ejemplo 0-14 segundos para «un prompt necesita un objetivo y restricciones» y 14-30 segundos para «cambiar adjetivos por acciones ejecutables». Cada plano declara los seis puntos; no hace falta que sea largo, pero sí ejecutable.\n\nDiseño de costuras: el segundo plano usa el último fotograma del primero como referencia del primero; conserva de 2 a 4 fotogramas de solapamiento y recorta los duplicados tras unir; graba la narración de forma continua y mantén el mismo ambiente bajo la costura.\n\nEstimación de coste: con 2 planos, 3 candidatos cada uno y 5 minutos por toma, el tiempo total de generación = 2 x 3 x 5 = 30 minutos de GPU. Si un plano debe dividirse en varios segmentos, cuenta los segmentos como ceil(segundos objetivo / 15) y multiplica después por los candidatos. La superresolución, la unión y la revisión humana van aparte.",
+    "explanation": "Esta pregunta enlaza la hoja de rodaje, la costura y el coste.\n\nLa primera parte no va de prosa, sino de si están los seis puntos: duración, cámara, acción del sujeto, entorno y luz, sonido y prohibiciones. Si falta uno, el modelo tiene una dirección más para improvisar. La segunda pide una costura diseñada, no solo una unión: referencia del último fotograma, fotogramas solapados y recorte de duplicados. La tercera pide contar los candidatos descartados: una toma usable no significa que solo se generara una.\n\nLa estimación de referencia es solo una forma de dividir el trabajo. El número real de planos depende de tu guion; mientras la fórmula se pueda reproducir y no falten candidatos ni segmentos, es una buena respuesta."
+  },
+  {
+    "id": "ch24-ex03",
+    "chapter": "chapter-24",
+    "type": "code",
+    "difficulty": 2,
+    "minutes": 10,
+    "objective": "Estimar minutos de GPU por segmentos y candidatos",
+    "prompt": "Escribe la función `production_minutes(shots, minutes_per_take, takes_per_usable)`:\n\n- `shots` es una lista donde cada elemento es `(target_seconds, clip_seconds)`, la duración objetivo de un plano y el límite por segmento;\n- el número de segmentos de un plano = `ceil(target_seconds / clip_seconds)`;\n- cada plano genera `segmentos x takes_per_usable` candidatos;\n- devuelve el total de minutos de GPU de toda la pieza = total de candidatos x `minutes_per_take`;\n- guarda también el total de costuras (suma de segmentos - 1 de cada plano) en la variable global `seams`.",
+    "starter": "seams = 0\n\n\ndef production_minutes(shots, minutes_per_take, takes_per_usable):\n    # 返回总 GPU 分钟，并把总接缝数写入全局 seams\n    raise NotImplementedError\n",
+    "checks": [
+      {
+        "kind": "assert_python",
+        "code": "assert production_minutes([(10, 15)], 5, 4) == 20, '一个镜头、一条候选组、4 条候选'",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "assert production_minutes([(30, 15)], 5, 4) == 40, '30 秒拆成 2 段，再乘 4 条候选'",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "assert production_minutes([(31, 15)], 5, 1) == 15, '31 秒需要 3 段'",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "production_minutes([(30, 15), (10, 15)], 5, 1)\nassert seams == 1, seams",
+        "weight": 12
+      },
+      {
+        "kind": "assert_python",
+        "code": "assert production_minutes([(10, 15), (30, 15)], 5, 4) == 60, '(1 + 2) 段 × 4 条候选 × 5 分钟'",
+        "weight": 12
+      },
+      {
+        "kind": "assert_python",
+        "code": "production_minutes([(15, 15)], 5, 1)\nassert seams == 0, '只有一段时没有接缝'",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "for _t in range(1, 61):\n    for _clip in (5, 10, 15, 20):\n        for _takes in (1, 3, 4):\n            _want_segments = -(-_t // _clip)\n            _want = _want_segments * _takes * 5\n            assert production_minutes([(_t, _clip)], 5, _takes) == _want, (_t, _clip, _takes)\n            assert seams == _want_segments - 1, (_t, _clip, _takes, seams)",
+        "weight": 36
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": "Si entiende que el número de segmentos se redondea hacia arriba, que las costuras son una menos que los segmentos y que los candidatos se multiplican después de segmentar."
+    },
+    "reference": "def production_minutes(shots, minutes_per_take, takes_per_usable):\n    global seams\n    total_takes = 0\n    seams = 0\n    for target_seconds, clip_seconds in shots:\n        count = -(-target_seconds // clip_seconds)\n        seams += count - 1\n        total_takes += count * takes_per_usable\n    return total_takes * minutes_per_take",
+    "explanation": "Este ejercicio combina las costuras de la sección 3 con el coste de la sección 4.\n\nEl número de segmentos se redondea hacia arriba: 30 segundos con un límite de 15 son exactamente 2 segmentos, mientras que 31 segundos necesitan 3. La división entera contaría 31 segundos como 2 segmentos y perdería uno sin avisar.\n\nLas costuras son una menos que los segmentos: una costura está entre dos segmentos y no hay costura después del último. Acumula en cada plano; no asignes solo en la primera llamada.\n\nLos candidatos se multiplican después de segmentar: un plano que necesita 2 segmentos con 3 candidatos cada uno tiene 6 tomas candidatas, no 3. El coste es tomas candidatas x minutos por toma, no segundos finales x precio unitario.\n\nLa comprobación principal recorre duraciones de 1 a 60, límites 5/10/15/20 y candidatos 1/3/4, y recalcula el valor esperado de forma independiente para evitar que se copie una tabla.\n\nLímite de corrección: la comprobación principal vale 36%, suficiente para P1 por sí sola; «acumular varios planos» solo está protegido por una comprobación del 12%, el eslabón más débil del ejercicio."
+  }
+]

@@ -1,0 +1,102 @@
+[
+  {
+    "id": "ch24-ex01",
+    "chapter": "chapter-24",
+    "type": "predict",
+    "difficulty": 2,
+    "minutes": 5,
+    "objective": "Judge the limits of open video",
+    "prompt": "Which statements match this chapter? (multi-select)\n\nA. H3-Base can generate 768p audio-video locally, and a single segment is capped at 15 seconds\nB. H3 uses Apache-2.0, so commercial use has no extra restrictions\nC. The Context-IR for complex input and the 2K regeneration pipeline are fully open source\nD. A 30-second finished piece can be joined from two clips of no more than 15 seconds, but the seam must be designed in advance\nE. Cost should be measured in GPU minutes per usable finished clip, including rejected candidates",
+    "checks": [
+      {
+        "kind": "output_choice",
+        "correct": [
+          "A",
+          "D",
+          "E"
+        ],
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "A, D, E. H3-Base's local capability is 768p, 4 to 15 seconds, 24 fps with stereo audio. B is wrong on licensing: H3 uses the MiniMax H3 Community License, not Apache-2.0. C is wrong on scope: Context-IR and 2K regeneration are not fully open.",
+    "explanation": "The question separates what the model can do from what is actually open.\n\nA is the description of H3-Base in this chapter: 768p locally, 4 to 15 seconds. D matches the seam process in section 3: the single-segment limit is 15 seconds, so 30 seconds must be joined, and the seam must be designed. E matches the cost rule in section 4: do not count only the successful generation; count the 3 to 5 candidates that get rejected.\n\nB and C are two common misreadings. Open weights are not Apache-2.0, and they do not mean the training pipeline, Context-IR and the 2K pipeline are all open. Before using a model in a commercial project, read the licence and check which components are actually released, not just the word \"open\".\n\nGrading boundary: the selected letters must match the reference answer exactly; any extra or missing letter is wrong."
+  },
+  {
+    "id": "ch24-ex02",
+    "chapter": "chapter-24",
+    "type": "reflect",
+    "difficulty": 3,
+    "minutes": 8,
+    "objective": "Write a shot list and budget for a 30-second clip",
+    "prompt": "You are making a 30-second teaching clip with H3 about \"how to write a clear prompt for an open model\". Write: (1) how many shots of no more than 15 seconds you will split it into, with duration, camera, subject action, environment and light, sound, and prohibitions for each; (2) how you will design the seams; (3) if each shot needs 3 candidates to yield 1 usable take, and one take costs 5 minutes, roughly how many GPU minutes the clip will need.",
+    "checks": [
+      {
+        "kind": "self_assessed",
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": true,
+      "criteria": "Whether the 30 seconds is split into shots of no more than 15 seconds; whether every shot covers duration, camera, subject action, environment and light, sound, and prohibitions; whether it explains how the last frame of one shot becomes the first-frame reference for the next; whether rejected candidates are included in a reproducible GPU-minute estimate."
+    },
+    "reference": "Shot split: at least two shots, for example 0-14 seconds on \"a prompt needs a goal and constraints\" and 14-30 seconds on \"replace adjectives with executable actions\". Each shot states the six items; it need not be long, but it must be executable.\n\nSeam design: the second shot uses the last frame of the first as its first-frame reference; keep 2 to 4 overlapping frames between them and trim the duplicates after joining; record narration continuously and lay the same ambience under the seam.\n\nCost estimate: with 2 shots, 3 candidates each, and 5 minutes per take, total generation time = 2 x 3 x 5 = 30 GPU minutes. If a shot must be split into multiple segments, count segments as ceil(target seconds / 15), then multiply by candidates. Upscaling, joining, and human review are extra.",
+    "explanation": "This question ties together the shot list, the seam, and the cost.\n\nThe first part is not about prose; it is about whether all six items are present: duration, camera, subject action, environment and light, sound, and prohibitions. Missing one gives the model one more direction to improvise. The second part asks for a designed seam, not just a join: last-frame reference, overlapping frames, trimming duplicates. The third part asks you to count rejected candidates: one usable take does not mean only one take was generated.\n\nThe reference estimate is only one way to split the work. The actual shot count depends on your script; as long as the formula is reproducible and neither candidates nor segments are missed, it is a good answer."
+  },
+  {
+    "id": "ch24-ex03",
+    "chapter": "chapter-24",
+    "type": "code",
+    "difficulty": 2,
+    "minutes": 10,
+    "objective": "Estimate GPU minutes from segments and candidates",
+    "prompt": "Write a function `production_minutes(shots, minutes_per_take, takes_per_usable)`:\n\n- `shots` is a list where each item is `(target_seconds, clip_seconds)`, the target duration of one shot and the per-segment cap;\n- the number of segments for a shot = `ceil(target_seconds / clip_seconds)`;\n- each shot generates `segments x takes_per_usable` candidates;\n- return the total GPU minutes for the whole piece = all candidate takes x `minutes_per_take`;\n- also store the total number of seams (sum of segments - 1 over every shot) in the global variable `seams`.",
+    "starter": "seams = 0\n\n\ndef production_minutes(shots, minutes_per_take, takes_per_usable):\n    # 返回总 GPU 分钟，并把总接缝数写入全局 seams\n    raise NotImplementedError\n",
+    "checks": [
+      {
+        "kind": "assert_python",
+        "code": "assert production_minutes([(10, 15)], 5, 4) == 20, '一个镜头、一条候选组、4 条候选'",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "assert production_minutes([(30, 15)], 5, 4) == 40, '30 秒拆成 2 段，再乘 4 条候选'",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "assert production_minutes([(31, 15)], 5, 1) == 15, '31 秒需要 3 段'",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "production_minutes([(30, 15), (10, 15)], 5, 1)\nassert seams == 1, seams",
+        "weight": 12
+      },
+      {
+        "kind": "assert_python",
+        "code": "assert production_minutes([(10, 15), (30, 15)], 5, 4) == 60, '(1 + 2) 段 × 4 条候选 × 5 分钟'",
+        "weight": 12
+      },
+      {
+        "kind": "assert_python",
+        "code": "production_minutes([(15, 15)], 5, 1)\nassert seams == 0, '只有一段时没有接缝'",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "for _t in range(1, 61):\n    for _clip in (5, 10, 15, 20):\n        for _takes in (1, 3, 4):\n            _want_segments = -(-_t // _clip)\n            _want = _want_segments * _takes * 5\n            assert production_minutes([(_t, _clip)], 5, _takes) == _want, (_t, _clip, _takes)\n            assert seams == _want_segments - 1, (_t, _clip, _takes, seams)",
+        "weight": 36
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": "Whether it understands that segment count rounds up, that seams are one fewer than segments, and that candidates multiply after segmentation."
+    },
+    "reference": "def production_minutes(shots, minutes_per_take, takes_per_usable):\n    global seams\n    total_takes = 0\n    seams = 0\n    for target_seconds, clip_seconds in shots:\n        count = -(-target_seconds // clip_seconds)\n        seams += count - 1\n        total_takes += count * takes_per_usable\n    return total_takes * minutes_per_take",
+    "explanation": "This exercise combines the seams from section 3 with the cost from section 4.\n\nSegment count rounds up: 30 seconds at a 15-second cap is exactly 2 segments, while 31 seconds needs 3. Integer division would count 31 seconds as 2 segments and silently lose one.\n\nSeams are one fewer than segments: a seam sits between two segments, and there is no seam after the last one. Accumulate for every shot; do not assign only on the first call.\n\nCandidates multiply after segmentation: a shot that needs 2 segments with 3 candidates each has 6 candidate takes, not 3. Cost is candidate takes x minutes per take, not finished seconds x unit price.\n\nThe main check runs target lengths 1 to 60, caps 5/10/15/20, and candidate counts 1/3/4, recomputing the expected value independently to stop answer lookup.\n\nGrading boundary: the main check carries 36%, enough for P1 on its own; \"multiple shots accumulate\" is guarded only by a 12% check, the weakest link in this exercise."
+  }
+]

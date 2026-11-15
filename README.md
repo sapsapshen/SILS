@@ -122,7 +122,7 @@ Read each chapter in this repository, or on the [ModelScope Studio](https://mode
 | [21 · 10 个 Case，带你看看 AIGC 的开源模型能做到什么地步](content/chapters/chapter-21.md) | Open generative-model use cases |
 | [22 · 定制？使用 DiffSynth 训练图像 LoRA](content/chapters/chapter-22.md) | Image LoRA customization with DiffSynth |
 | [23 · 一张商品营销图，从生成到修改怎么做？](content/chapters/chapter-23.md) | Product-image generation and editing |
-| [24 · 开源模型也能做出像样的 AI 视频吗？](content/chapters/chapter-24.md) | MiniMax H3 deployment tutorial pending |
+| [24 · 开源模型也能做出像样的 AI 视频吗？](content/chapters/chapter-24.md) | Open-video pipeline: shot lists, seams, cost and licensing |
 | [25 · 补充：AIGC 理论知识](content/chapters/chapter-25.md) | Image and video generation fundamentals |
 | **Part 7 · Agents** | |
 | [26 · Agent 是什么，它能做什么事？](content/chapters/chapter-26.md) | Agent components, execution loop, and use cases |
@@ -221,6 +221,6 @@ The workflow uses the repository secret `MODELSCOPE_API_KEY`, synchronizes commi
 
 ## License
 
-This repository uses the [Apache License 2.0](LICENSE). Referenced models, datasets, and tools have their own licenses and terms. Chapter images and attachments remain subject to the rights of their authors or respective rights holders.
+This repository uses the [Apache License 2.0](LICENSE). The chapter text is derived from the [ModelScope ms-cookbook](https://github.com/modelscope/ms-cookbook), also Apache-2.0; this three-language edition keeps the upstream source links in the book data and the upstream attribution in the site footer. If you repackage or sell an adapted edition, keep both the licence and the upstream name/source visible — see [NOTICE](NOTICE). Referenced models, datasets, and tools have their own licenses and terms. Chapter images and attachments remain subject to the rights of their authors or respective rights holders.
 
 Bundled third-party components retain their licenses: [KaTeX · MIT](assets/katex/LICENSE), [Remix Icon · Apache 2.0](assets/home/REMIX-LICENSE), [Noto Serif SC · SIL OFL 1.1](assets/home/NOTO-LICENSE.txt), and [Dada · MIT](assets/dada/LICENSE). See the [Dada notice](assets/dada/NOTICE.md), [site attribution](assets/paper/ATTRIBUTION.txt), [shared asset attribution](assets/home/ATTRIBUTION.txt), and [artwork notes](assets/review/ATTRIBUTION.md).

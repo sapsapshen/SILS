@@ -122,7 +122,7 @@ Python 运行时约 13 MB，懒加载：阅读时不下载任何东西，只有�
 | [21 · 10 个 Case，带你看看 AIGC 的开源模型能做到什么地步](content/chapters/chapter-21.md) | 开源生成模型的应用案例 |
 | [22 · 定制？使用 DiffSynth 训练图像 LoRA](content/chapters/chapter-22.md) | 使用 DiffSynth 定制图像 LoRA |
 | [23 · 一张商品营销图，从生成到修改怎么做？](content/chapters/chapter-23.md) | 商品图生成与编辑 |
-| [24 · 开源模型也能做出像样的 AI 视频吗？](content/chapters/chapter-24.md) | MiniMax H3 部署教程待更新 |
+| [24 · 开源模型也能做出像样的 AI 视频吗？](content/chapters/chapter-24.md) | 开源视频生产流程：拍摄单、接缝、成本与许可 |
 | [25 · 补充：AIGC 理论知识](content/chapters/chapter-25.md) | 图像与视频生成基础 |
 | **第七篇　Agent 特别篇** | |
 | [26 · Agent 是什么，它能做什么事？](content/chapters/chapter-26.md) | Agent 的组成、执行流程与适用场景 |
@@ -221,6 +221,6 @@ node scripts/check-site.mjs
 
 ## 开源协议
 
-本仓库采用 [Apache License 2.0](LICENSE)。书中引用的模型、数据集与工具适用各自的许可证及使用条款；正文图片和附件的权利归原作者或相应权利人所有。
+本仓库采用 [Apache License 2.0](LICENSE)。正文源自 [ModelScope ms-cookbook](https://github.com/modelscope/ms-cookbook)，上游同样采用 Apache-2.0；本三语版本在书数据中保留上游源链接，并在网站页脚保留上游署名。若再打包、改编或商业分发，必须同时保留许可证与上游名称/来源，详见 [NOTICE](NOTICE)。书中引用的模型、数据集与工具适用各自的许可证及使用条款；正文图片和附件的权利归原作者或相应权利人所有。
 
 第三方组件保留各自许可证：[KaTeX · MIT](assets/katex/LICENSE)、[Remix Icon · Apache 2.0](assets/home/REMIX-LICENSE)、[Noto Serif SC · SIL OFL 1.1](assets/home/NOTO-LICENSE.txt)、[搭搭 · MIT](assets/dada/LICENSE)。详见[搭搭来源声明](assets/dada/NOTICE.md)、[网站素材说明](assets/paper/ATTRIBUTION.txt)、[共用素材说明](assets/home/ATTRIBUTION.txt)与[插画说明](assets/review/ATTRIBUTION.md)。

@@ -18,3 +18,6 @@
 #homePage .landing-paths{margin-top:40px;padding-top:0}
 @media(max-width:1000px){#homePage .landing-hero{padding:44px 30px;min-height:420px}.home-fact{gap:16px;padding-inline:8px}.home-facts strong{font-size:36px}.fact-label{font-size:16px}}
 @media(max-width:700px){#homePage .landing-hero{padding:36px 22px 250px;min-height:0}#homePage .landing-copy{max-width:none}#homePage .landing-copy h1{font-size:42px}#homePage .hero-description{font-size:16px}#homePage .hero-reading-art{width:280px;right:-18px;bottom:-24px}#homePage .hero-actions{gap:18px}#homePage .hero-actions .primary-button{font-size:14px}.home-facts>.container{width:calc(100% - 28px);padding-block:20px}.home-fact{flex-direction:column;gap:10px;padding:4px}.home-facts strong{font-size:30px}.home-facts strong>span{font-size:12px}.fact-label{font-size:13px;text-align:center}.fact-label small{font-size:8px;letter-spacing:.08em}#homePage .landing-paths{margin-top:30px}}
+/* Upstream attribution stays visible on every reading surface. */
+.source-credit{font-size:12px;color:var(--muted);text-align:center;margin:8px 0 0;line-height:1.6}
+.source-credit a{color:inherit;text-decoration:underline;text-underline-offset:2px}

@@ -424,5 +424,12 @@
  "c34-s23": "18.11 Domain models: adapting a general model to a specialised field",
  "c34-s24": "18.13 Hallucination: plausible-sounding but unsupported",
  "c34-s25": "18.13.1 Common types of hallucination",
- "c34-s26": "18.13.2 How to reduce the risk of hallucination"
+ "c34-s26": "18.13.2 How to reduce the risk of hallucination",
+ "c24-s1": "1. What H3 opens, and what it does not",
+ "c24-s2": "2. Write a shot list first, not a prompt",
+ "c24-s3": "3. A reusable six-step pipeline",
+ "c24-s4": "4. Cost should be measured in usable seconds",
+ "c24-s5": "5. When not to use open video",
+ "c24-s6": "6. Read the licence and labeling rules before the last minute",
+ "c24-s7": "7. A minimum executable checklist"
 }

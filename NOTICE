@@ -1,0 +1,23 @@
+超智学习空间 / Super Intelligence Learning Space
+================================================
+
+This repository is a three-language reading edition derived from the
+ModelScope Cookbook (ms-cookbook):
+
+    https://github.com/modelscope/ms-cookbook
+    https://modelscope.cn/studios/ms-cookbook-team/ms-cookbook
+
+The upstream chapter text, images and attachments are distributed under the
+Apache License 2.0 (see LICENSE). This edition keeps the upstream source links
+in the book data (`sourceUrl` / `editUrl`) and in each chapter's footer.
+
+If you reuse, repackage or sell an adapted edition:
+  * keep this NOTICE and the Apache-2.0 LICENSE;
+  * keep the upstream project name and source URL visible to readers;
+  * state clearly which parts you added or changed;
+  * check the licence of every model, dataset and tool referenced by a chapter
+    separately — Apache-2.0 over the book does not relicense them.
+
+Third-party components bundled with the site (KaTeX, Remix Icon, Noto Serif SC,
+Dada artwork) retain their own licences; see README.md and the ATTRIBUTION files
+under assets/.

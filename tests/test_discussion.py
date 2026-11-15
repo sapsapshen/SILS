@@ -43,7 +43,8 @@ def test_renumbering_keeps_notes_with_original_article(site):
     assert c.get(agent).json()['items'][0]['chapter']=='chapter-26'
     assert c.get('/api/chapters/chapter-20/entries').json()['items']==[]
     assert c.get('/api/chapters/chapter-33/entries').json()['items']==[]
-    assert c.get('/api/chapters/chapter-24/entries').status_code==404
+    # No chapter is pending after the 2026-11 pass; an unknown id still 404s.
+    assert c.get('/api/chapters/chapter-99/entries').status_code==404
     guest=TestClient(site[0])
     assert {x['id'] for x in guest.get(case).json()['items']}=={'case'}
     response=c.post(agent,json={'kind':'comment','text':'new comment'})

@@ -424,5 +424,12 @@
  "c34-s23": "18.11 Modelos de dominio: adaptar un modelo general a un campo especializado",
  "c34-s24": "18.13 Alucinación: parece razonable pero carece de fundamento",
  "c34-s25": "18.13.1 Tipos habituales de alucinación",
- "c34-s26": "18.13.2 Cómo reducir el riesgo de alucinación"
+ "c34-s26": "18.13.2 Cómo reducir el riesgo de alucinación",
+ "c24-s1": "1. Qué abre H3 y qué no",
+ "c24-s2": "2. Primero escribe una hoja de rodaje, no un prompt",
+ "c24-s3": "3. Un flujo de seis pasos reutilizable",
+ "c24-s4": "4. El coste se mide en segundos utilizables",
+ "c24-s5": "5. Cuándo no usar vídeo abierto",
+ "c24-s6": "6. Lee la licencia y las reglas de etiquetado antes del último minuto",
+ "c24-s7": "7. Lista mínima ejecutable"
 }

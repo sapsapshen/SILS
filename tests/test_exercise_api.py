@@ -170,13 +170,17 @@ def test_unknown_exercise_is_rejected(site):
     assert client.get(PROGRESS).json()['items'] == []
 
 
-def test_pending_chapter_is_rejected(site):
+def test_newly_ready_chapter_accepts_progress(site):
+    # Chapter 24 was pending when this suite was written and became ready in
+    # the 2026-11 production pass. Its exercise id is now storable; unknown
+    # chapters are still covered by test_unknown_exercise_is_rejected above.
     client = reader(site)
     response = client.post(PROGRESS, json={'items': [
         {'chapter': 'chapter-24', 'exercise': 'ch24-ex01', 'passed': 1},
     ]})
     assert response.status_code == 201
-    assert response.json()['skipped'] == 1
+    assert response.json() == {'saved': 1, 'skipped': 0}
+    assert client.get(PROGRESS).json()['items'][0]['chapter'] == 'chapter-24'
 
 
 def test_oversized_code_is_rejected(site):

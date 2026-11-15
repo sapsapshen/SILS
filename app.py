@@ -1,6 +1,6 @@
 """Reading community API and static site; OAuth credentials never leave this process."""
 from contextlib import asynccontextmanager, closing, contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import httpx2 as httpx
@@ -20,10 +20,13 @@ from zoneinfo import ZoneInfo
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.exception_handlers import http_exception_handler as default_http_exception_handler
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from typing import Any
+from xml.sax.saxutils import escape as xml_escape
 
 from pydantic import BaseModel, Field, ValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
@@ -47,6 +50,35 @@ REVALIDATE = 'public, max-age=0, must-revalidate'
 # The reader never needs these sensors. An explicit empty allowlist stops an
 # embedded frame from inheriting a looser policy from the host page.
 PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=(), payment=()'
+# The shell has no inline scripts or inline event handlers (verified against
+# index.html), so script-src can stay at 'self'. WebAssembly is the one
+# exemption: the exercise sandbox runs Pyodide, and a CSP without
+# 'wasm-unsafe-eval' makes every exercise fail to start in Chromium.
+# style-src keeps 'unsafe-inline' because the reader adjusts reading width,
+# focus mode and motion through style attributes.
+# ModelScope Studio renders hosted apps inside modelscope.cn, so a bare
+# frame-ancestors 'none' would blank the official deployment. Keep the two
+# Studio origins, and let a self-hosted install tighten this to 'self' (or
+# 'none') through FRAME_ANCESTORS without editing code.
+FRAME_ANCESTORS = os.getenv(
+    'FRAME_ANCESTORS', "'self' https://modelscope.cn https://www.modelscope.cn")
+CONTENT_SECURITY_POLICY = '; '.join((
+    "default-src 'self'",
+    "script-src 'self' 'wasm-unsafe-eval'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "media-src 'self'",
+    "worker-src 'self' blob:",
+    "frame-src 'none'",
+    f"frame-ancestors {FRAME_ANCESTORS}",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "object-src 'none'",
+    "manifest-src 'self'",
+))
+HSTS = 'max-age=15552000'
 
 # Python's map is built from /etc/mimetypes on Linux, where webp is often absent;
 # StaticFiles then serves it as octet-stream and the browser cannot sniff it.
@@ -618,12 +650,56 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
         if first<today-timedelta(days=179): raise HTTPException(422,'只能查询最近 180 天的数据')
         return today,first,last,span
 
+    # FORCE_HTTPS is opt-in: it assumes uvicorn is run with --proxy-headers
+    # behind the TLS terminator (or terminates TLS itself), otherwise every
+    # request looks like http and the redirect loops.
+    force_https = os.getenv('FORCE_HTTPS', '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+    def request_scheme(request):
+        # uvicorn's ProxyHeadersMiddleware rewrites request.url.scheme when the
+        # proxy is trusted; reading the header as a fallback keeps the HSTS and
+        # Secure-cookie decisions correct on hosts that only forward the header.
+        forwarded = request.headers.get('x-forwarded-proto', '').split(',')[0].strip().lower()
+        return forwarded if forwarded in ('http', 'https') else request.url.scheme
+
     @app.middleware('http')
     async def response_headers(request, call_next):
-        response = await call_next(request)
+        scheme = request_scheme(request)
+        redirected_to_https = force_https and scheme != 'https'
+        if redirected_to_https:
+            response = RedirectResponse(str(request.url.replace(scheme='https')), status_code=308)
+        else:
+            response = await call_next(request)
+
         response.headers['X-Content-Type-Options']='nosniff'
+        # Modern browsers enforce CSP frame-ancestors above; SAMEORIGIN is the
+        # legacy fallback for browsers that do not, and does not contradict the
+        # Studio allowlist in browsers that do.
+        response.headers['X-Frame-Options']='SAMEORIGIN'
         response.headers['Referrer-Policy']='strict-origin-when-cross-origin'
         response.headers['Permissions-Policy']=PERMISSIONS_POLICY
+        response.headers['Content-Security-Policy']=CONTENT_SECURITY_POLICY + (
+            '; upgrade-insecure-requests' if scheme == 'https' else ''
+        )
+        response.headers['Cross-Origin-Opener-Policy']='same-origin-allow-popups'
+        if scheme == 'https':
+            response.headers['Strict-Transport-Security']=HSTS
+
+        # FastAPI's automatic slash redirects are absolute. On an HTTPS site an
+        # `http://host/api/wishes` Location is a downgrade, and behind a proxy it
+        # can name the internal host. Same-host redirects become relative --
+        # except the HTTP->HTTPS redirect itself, which must stay absolute or
+        # the browser resolves the relative path back onto http and loops.
+        if 300 <= response.status_code < 400 and not redirected_to_https:
+            location = response.headers.get('location')
+            if location:
+                parsed_location = urlparse(location)
+                if parsed_location.scheme in ('http', 'https') and parsed_location.netloc == request.url.netloc:
+                    relative = parsed_location.path or '/'
+                    if parsed_location.query: relative += '?' + parsed_location.query
+                    if parsed_location.fragment: relative += '#' + parsed_location.fragment
+                    response.headers['location'] = relative
+
         if request.url.path.startswith(('/api/','/auth/')):
             response.headers['Cache-Control']='no-store'
         elif 200 <= response.status_code < 300 and 'cache-control' not in response.headers:
@@ -1255,6 +1331,37 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
     def analytics_page(): return FileResponse(ROOT/'assets/analytics.html',headers={'Cache-Control':'no-store'})
     @app.get('/favicon.svg')
     def favicon(): return FileResponse(ROOT/'favicon.svg')
+    @app.get('/favicon.ico')
+    def favicon_ico():
+        # Browsers and link checkers still probe /favicon.ico. Serve the real
+        # SVG with its own MIME type instead of a FastAPI JSON 404.
+        return FileResponse(ROOT/'favicon.svg', media_type='image/svg+xml', headers={'Cache-Control':SHORT_CACHE})
+    @app.get('/robots.txt')
+    def robots_txt():
+        body = f'User-agent: *\nAllow: /\nSitemap: {base}/sitemap.xml\n'
+        return PlainTextResponse(body, headers={'Cache-Control':SHORT_CACHE})
+    @app.get('/sitemap.xml')
+    def sitemap_xml():
+        # The site is hash-routed, so there is exactly one crawlable URL. A
+        # sitemap with invented chapter paths would be worse than one entry.
+        last_modified = datetime.fromtimestamp(
+            (ROOT/'assets/content.js').stat().st_mtime, timezone.utc).date().isoformat()
+        body = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            f'<url><loc>{xml_escape(base + "/")}</loc>'
+            f'<lastmod>{last_modified}</lastmod>'
+            '<changefreq>weekly</changefreq><priority>1.0</priority></url>'
+            '</urlset>\n'
+        )
+        return Response(body, media_type='application/xml', headers={'Cache-Control':SHORT_CACHE})
+    @app.exception_handler(StarletteHTTPException)
+    async def html_error_page(request: Request, exc: StarletteHTTPException):
+        # API clients keep FastAPI's JSON contract. A human who mistypes a URL
+        # gets the site's own 404 page instead of {"detail":"Not Found"}.
+        if exc.status_code == 404 and not request.url.path.startswith('/api/'):
+            return FileResponse(ROOT/'404.html', status_code=404, media_type='text/html')
+        return await default_http_exception_handler(request, exc)
     @app.get('/deployment.json')
     def deployment():
         if not (ROOT/'deployment.json').exists(): raise HTTPException(404)
