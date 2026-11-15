@@ -212,7 +212,7 @@ def build(check=False):
             if not target.exists() or target.read_text(encoding='utf-8') != rendered[language]:
                 raise SystemExit(f'{target.relative_to(ROOT)} is out of date. Run python3 scripts/build-i18n.py.')
         else:
-            target.write_text(rendered[language], encoding='utf-8')
+            target.write_text(rendered[language], encoding='utf-8', newline='\n')
     blocks = 0
     done = 0
     for chapter in book['chapters']:

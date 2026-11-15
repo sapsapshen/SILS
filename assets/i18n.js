@@ -88,8 +88,8 @@
      reader never needs. They are injected on demand, so `set` has to wait for
      them: notifying first would paint half-translated chrome over Chinese prose. */
   const extraPaths = {
-    en: ['assets/locale/en.js?v=f4b4113a954a', 'assets/content-i18n/en.js?v=cce2767697ab'],
-    es: ['assets/locale/es.js?v=167831342494', 'assets/content-i18n/es.js?v=bf65408592c8']
+    en: ['assets/locale/en.js?v=f4b4113a954a', 'assets/content-i18n/en.js?v=cfe855d0ca04'],
+    es: ['assets/locale/es.js?v=167831342494', 'assets/content-i18n/es.js?v=a424bed4b45a']
   };
   async function load(code) {
     const next = normalize(code);

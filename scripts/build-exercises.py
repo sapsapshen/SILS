@@ -62,7 +62,7 @@ def _emit(check=False):
             raise SystemExit('assets/exercises.js is out of date. Run python3 scripts/build-exercises.py.')
         print(f'Verified {payload["exerciseCount"]} exercises across {len(chapters)} chapters')
         return
-    OUTPUT.write_text(output, encoding='utf-8')
+    OUTPUT.write_text(output, encoding='utf-8', newline='\n')
     print(f'Built {payload["exerciseCount"]} exercises across {len(chapters)} chapters')
 
 

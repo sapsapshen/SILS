@@ -179,14 +179,14 @@ def import_snapshot(snapshot, date):
         file = f'source-html/chapter-{number:02d}.html'
         # Newlines between top-level blocks make source reviewable without altering inline text/code.
         source_html = '<article>\n' + '\n'.join(xml_dump(n) for n in article) + '\n</article>\n'
-        (CONTENT / file).write_text(source_html)
+        (CONTENT / file).write_text(source_html, encoding='utf-8', newline='\n')
         status = 'pending' if '敬请期待' in plain(article) and len(plain(article)) < 150 else 'ready'
         entries.append({'number': number, 'title': c['title'], 'partIndex': c['partIndex'], 'file': file, 'status': status})
         reports.append({'number': number, 'revision': doc['revision_id'], 'sourceXmlSha256': digest(doc['content'].encode()), 'sourceMarkdownSha256': digest(md['content'].encode()), 'chapterFileSha256': digest(source_html.encode()), 'headings': len(expected_headings), 'codeBlocks': len(expected_code), 'formulas': len(expected_math), 'images': len(list(original.iter('img'))), 'attachments': len(list(original.iter('source'))), 'embeddedSheets': sheet_evidence, 'proseVerified': True, 'headingOrderVerified': True, 'codeVerified': True, 'formulasVerified': True})
         print(f'Imported {number:02d}: revision {doc["revision_id"]}; prose, headings, code and math verified')
     manifest = {'title': '超智学习空间', 'sourceUpdated': date, 'parts': [{'title': p['title'], 'shortTitle': SHORT_PARTS[i]} for i,p in enumerate(catalog['parts'])], 'chapters': entries}
-    (CONTENT / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
-    (CONTENT / 'sync-report.json').write_text(json.dumps({'syncedAt': date, 'method': 'Feishu XML and embedded sheet values; no prose rewriting', 'chapters': reports}, ensure_ascii=False, indent=2) + '\n')
+    (CONTENT / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8', newline='\n')
+    (CONTENT / 'sync-report.json').write_text(json.dumps({'syncedAt': date, 'method': 'Feishu XML and embedded sheet values; no prose rewriting', 'chapters': reports}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8', newline='\n')
 
 def build(check=False):
     manifest = json.loads((CONTENT / 'manifest.json').read_text())
@@ -201,7 +201,7 @@ def build(check=False):
                 raise SystemExit(f'{markdown.relative_to(ROOT)} is out of date. Run python3 scripts/build-content.py.')
         else:
             markdown.parent.mkdir(parents=True, exist_ok=True)
-            markdown.write_text(markdown_output)
+            markdown.write_text(markdown_output, encoding='utf-8', newline='\n')
         title = article.find('h1')
         assert title is not None and plain(title) == entry['title']
         article.remove(title)
@@ -258,7 +258,7 @@ def build(check=False):
         if not target.exists() or target.read_text() != output:
             raise SystemExit('assets/content.js is out of date. Run python3 scripts/build-content.py.')
     else:
-        target.write_text(output)
+        target.write_text(output, encoding='utf-8', newline='\n')
     print(f'{"Verified" if check else "Built"} {len(chapters)} chapters, {payload["imageCount"]} images, {payload["attachmentCount"]} attachments')
 
 if __name__ == '__main__':
