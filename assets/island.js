@@ -595,8 +595,6 @@
       if (state.expanded && state.expanded.id === id) collapse();
     }, id);
   };
-  // Task 8 把它接成 rAF 帧循环；先占位，避免 mount 前有未定义引用。
-  function scheduleFrame() { /* Task 8 */ }
 
   const handle = id => ({ id, update: partial => update(id, partial), end: () => end(id) });
 
@@ -772,6 +770,241 @@
     commit();
   }
 
+  // ---- 渲染层：固定模板，不做通用组件树 ----
+  // 上游用 React 协调任意 ReactNode；本站只需要七个内容原子，所以这里是一棵
+  // 一次建好、之后只改属性的固定树。形状只写 path 的 d 与 transform/opacity，
+  // 绝不写 width/height/top/left——那会在 40 万字的文档上触发重排。
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  // 两个符号自绘（不引 Hugeicons，见 NOTICE）：书签与莲座。
+  const GLYPHS = {
+    bookmark: 'M7 3.5h10c.6 0 1 .4 1 1V20l-6-3.2-6 3.2V4.5c0-.6.4-1 1-1Z',
+    lotus: 'M12 20.5C7.9 18.6 5 15.1 5 11.3c0-1.9.8-3.7 2.3-5.3.9 2.3 2.5 4.1 4.7 5.4 2.2-1.3 3.8-3.1 4.7-5.4 1.5 1.6 2.3 3.4 2.3 5.3 0 3.8-2.9 7.3-7 9.2Z' +
+      'M12 5.5c1.6 2.1 2.2 4.2 1.8 6.4-.6.4-1.2.7-1.8.9-.6-.2-1.2-.5-1.8-.9-.4-2.2.2-4.3 1.8-6.4Z'
+  };
+  const CHAR_MS = 6.6;                              // 15px 等宽数字的字宽估算（headless）
+
+  const el = (tag, cls, attrs) => {
+    const n = document.createElement(tag);
+    if (cls) n.setAttribute('class', cls);
+    for (const key in attrs || {}) n.setAttribute(key, attrs[key]);
+    return n;
+  };
+  const svgEl = (tag, cls, attrs) => {
+    const n = document.createElementNS(SVG_NS, tag);
+    if (cls) n.setAttribute('class', cls);
+    for (const key in attrs || {}) n.setAttribute(key, attrs[key]);
+    return n;
+  };
+
+  const node = {};                                  // 结构缓存
+  let contentKey = '';
+  let frameQueued = false;
+  let timeAtom = null;
+
+  const slotPair = cls => {
+    const wrap = el('span', cls);
+    wrap.append(el('span', 'island-slot leading'), el('span', 'island-slot trailing'));
+    return wrap;
+  };
+
+  function buildDom(root, backdrop) {
+    const island = el('div', 'island', { role: 'group' });
+    node.region = island;
+    node.shape = svgEl('svg', 'island-shape', { 'aria-hidden': 'true' });
+    node.shape.appendChild(svgEl('title')).textContent = '灵动岛';
+    node.fill = svgEl('path', 'island-fill');
+    node.keyline = svgEl('path', 'island-keyline');
+    const alpha = keylineAlpha(backdrop || '#ffffff');
+    if (alpha > 0) node.keyline.setAttribute('stroke-opacity', String(alpha));
+    node.shape.append(node.fill, node.keyline);
+    node.sensor = el('div', 'island-sensor', { 'aria-hidden': 'true' });
+    node.pill = el('button', 'island-pill', { type: 'button', 'aria-expanded': 'false' });
+    node.pill.append(el('span', 'island-slot leading'), el('span', 'island-slot trailing'));
+    node.bubble = el('div', 'island-bubble');
+    node.bubble.append(el('span', 'island-slot leading'), el('span', 'island-slot trailing'));
+    node.expanded = el('div', 'island-expanded');
+    const row = el('div', 'island-row');
+    node.expandedLeading = el('span', 'island-region', { 'data-slot': 'leading' });
+    node.expandedCenter = el('span', 'island-region', { 'data-slot': 'center' });
+    node.expandedTrailing = el('span', 'island-region', { 'data-slot': 'trailing' });
+    row.append(node.expandedLeading, node.expandedCenter, node.expandedTrailing);
+    node.expandedBottom = el('div', 'island-region', { 'data-slot': 'bottom' });
+    node.expanded.append(row, node.expandedBottom);
+    node.live = el('p', 'island-live', { role: 'status', 'aria-live': 'polite' });
+    island.append(node.shape, node.sensor, node.pill, node.bubble, node.expanded, node.live);
+    root.appendChild(island);
+
+    node.pill.addEventListener('pointerdown', () => press('hold'));
+    node.pill.addEventListener('pointerup', () => release());
+    node.pill.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); expand(); }
+      else if (event.key === 'Escape') collapse();
+    });
+    if (typeof document !== 'undefined') {
+      document.addEventListener('keydown', event => { if (event.key === 'Escape') keyEscape(); });
+      document.addEventListener('pointerdown', event => {
+        if (event.target && node.region && node.region.children && !contains(node.region, event.target)) outsidePress();
+      });
+    }
+    return island;
+  }
+  const contains = (parent, child) => {
+    if (parent === child) return true;
+    for (const kid of parent.children || []) if (contains(kid, child)) return true;
+    return false;
+  };
+
+  // ---- 内容原子 ----
+  const atom = spec => {
+    if (!spec) return null;
+    if (spec.glyph !== undefined) {
+      const mark = svgEl('svg', 'island-glyph', { viewBox: '0 0 24 24', width: '22', height: '22', 'aria-hidden': 'true' });
+      mark.appendChild(svgEl('path', null, { d: GLYPHS[spec.glyph] || GLYPHS.bookmark, fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+      return mark;
+    }
+    if (spec.ring !== undefined) return ring(spec.ring, spec.size || 20);
+    if (spec.bar !== undefined) return bar(spec.bar);
+    if (spec.buttons) return buttonRow(spec.buttons);
+    if (spec.label !== undefined) { const n = el('span', 'island-label'); n.textContent = spec.label; return n; }
+    if (spec.time !== undefined) return timeAtomFor(spec);
+    if (spec.value !== undefined) { const n = el('span', 'island-value'); n.textContent = String(spec.value); return n; }
+    if (spec.subtitle !== undefined) { const n = el('span', 'island-subtitle'); n.textContent = String(spec.subtitle); return n; }
+    if (spec.title !== undefined) { const n = el('span', 'island-title'); n.textContent = String(spec.title); return n; }
+    if (spec.text !== undefined) { const n = el('span', 'island-text'); n.textContent = String(spec.text); return n; }
+    return null;
+  };
+  const ring = (value, size) => {
+    const r = (size - 3) / 2;
+    const circumference = 2 * Math.PI * r;
+    const mark = svgEl('svg', 'island-ring', { viewBox: `0 0 ${size} ${size}`, width: String(size), height: String(size), 'aria-hidden': 'true' });
+    mark.appendChild(svgEl('circle', 'island-ring-track', { cx: size / 2, cy: size / 2, r, 'stroke-width': '3' }));
+    const arc = svgEl('circle', 'island-ring-arc', {
+      cx: size / 2, cy: size / 2, r, 'stroke-width': '3',
+      'stroke-dasharray': `${(Math.max(0, Math.min(1, value)) * circumference).toFixed(3)} ${circumference.toFixed(3)}`
+    });
+    mark.appendChild(arc);
+    return mark;
+  };
+  const bar = value => {
+    const wrap = el('div', 'island-bar');
+    const fill = el('i');
+    // 用 scaleX 而非 width：底部条跟着值走时不该让展开面重新布局。
+    fill.style.transform = `scaleX(${Math.max(0, Math.min(1, value))})`;
+    wrap.appendChild(fill);
+    return wrap;
+  };
+  const buttonRow = buttons => {
+    const wrap = el('span', 'island-buttons');
+    buttons.forEach(config => {
+      const button = el('button', 'island-btn', { type: 'button' });
+      button.textContent = config.label;
+      button.addEventListener('click', () => { if (config.onPress) config.onPress(config.key); });
+      wrap.appendChild(button);
+    });
+    return wrap;
+  };
+  const formatMs = (ms, format, locale) => {
+    const total = Math.max(0, Math.round(ms / 1000));
+    const minutes = Math.floor(total / 60);
+    const seconds = total % 60;
+    if (format === 'mm:ss') return `${minutes}:${String(seconds).padStart(2, '0')}`;
+    const hours = Math.floor(minutes / 60);
+    return hours > 0 ? `${hours} 小时 ${minutes % 60} 分` : `${minutes} 分 ${String(seconds).padStart(2, '0')} 秒`;
+  };
+  const timeAtomFor = spec => {
+    const n = el('span', 'island-time');
+    n.textContent = formatMs(spec.until ? Math.max(0, spec.until - Date.now()) : (spec.time || 0), spec.format || 'mm:ss');
+    timeAtom = { node: n, spec };
+    return n;
+  };
+
+  // ---- 槽位放置 ----
+  // 每帧只写 transform：槽位的宽度交给 CSS 的 max-width，不在此处按帧设变量。
+  const place = (slot, x) => {
+    slot.style.transform = `translate(${x.toFixed(2)}px, 0)`;
+  };
+
+  const paintSlots = scene => {
+    const p = scene.presentation;
+    const geometry = currentGeometry();
+    const compact = p.kind === 'compact' ? p : null;
+    if (compact) {
+      fillSlot(node.pill.children[0], compact.leading);
+      fillSlot(node.pill.children[1], compact.trailing);
+      measuredNodes = { leading: node.pill.children[0], trailing: node.pill.children[1] };
+    } else if (p.kind === 'minimal') {
+      fillSlot(node.pill.children[0], p.split ? p.split.attached.leading : null);
+      fillSlot(node.pill.children[1], p.split ? p.split.attached.trailing : null);
+      fillSlot(node.bubble.children[0], p.split ? p.split.detached.leading : null);
+      fillSlot(node.bubble.children[1], p.split ? p.split.detached.trailing : null);
+      measuredNodes = { leading: node.pill.children[0], trailing: node.pill.children[1] };
+    } else if (p.kind === 'expanded') {
+      fillSlot(node.expandedLeading, p.leading);
+      fillSlot(node.expandedCenter, p.center);
+      fillSlot(node.expandedTrailing, p.trailing);
+      fillSlot(node.expandedBottom, p.bottom);
+      measuredNodes = { expandedHeight: (node.expanded.offsetHeight || HEADLESS.expandedHeight) };
+    }
+    // 槽位贴外缘：左槽从左内边距起，右槽贴在右内边距处。
+    const c = METRICS.compact;
+    const pillLeft = geometry.left + c.edgePadding;
+    place(node.pill, geometry.left, geometry.right - geometry.left);
+    place(node.pill.children[0], pillLeft - geometry.left, c.maxSlotWidth);
+    place(node.pill.children[1], geometry.right - geometry.left - c.edgePadding, c.maxSlotWidth);
+  };
+
+  const fillSlot = (slot, spec) => {
+    if (!slot) return;
+    const child = atom(spec);
+    slot.children.length = 0;
+    if (child) slot.appendChild(child);
+  };
+
+  const outlineOf = geometry => {
+    const width = Math.max(0, geometry.right - geometry.left);
+    let d = continuousRectPath(geometry.left, geometry.top, width, geometry.height, geometry.radius, METRICS.corner.smoothing);
+    if (geometry.bubbleHeight > 0.5) {
+      const bubble = geometry.bubbleRight - geometry.bubbleLeft;
+      // 副胶囊与主胶囊同色填充：两条子路径并成一个 d，省一个节点也省一次合成。
+      d += ' ' + continuousRectPath(geometry.bubbleLeft, geometry.top, bubble, geometry.bubbleHeight,
+        geometry.bubbleHeight / 2, METRICS.corner.smoothing);
+    }
+    return d;
+  };
+
+  const paint = () => {
+    if (!mounted || headless) return;
+    const scene = deriveScene(state);
+    const geometry = currentGeometry();
+    node.fill.setAttribute('d', outlineOf(geometry));
+    node.keyline.setAttribute('d', outlineOf(geometry));
+    const expanded = geometry.kind === 'expanded';
+    node.pill.setAttribute('aria-expanded', String(expanded));
+    node.pill.setAttribute('aria-label', scene.label || '');
+    node.pill.hidden = expanded;
+    node.bubble.hidden = geometry.bubbleHeight <= 0.5;
+    node.expanded.hidden = !expanded;
+    node.sensor.style.opacity = String(METRICS.sensor.opacity * (expanded ? 0 : 1));
+    // 内容只在 contentKey 变化时重画：每帧重建 DOM 会在正文里造成无谓的布局。
+    if (scene.contentKey !== contentKey) {
+      contentKey = scene.contentKey;
+      timeAtom = null;
+      paintSlots(scene);
+      if (alerting.size) node.live.textContent = scene.label;
+    } else if (timeAtom) {
+      const spec = timeAtom.spec;
+      timeAtom.node.textContent = formatMs(spec.until ? Math.max(0, spec.until - clockNow() * 1000) : (spec.time || 0), spec.format);
+    }
+  };
+
+  function scheduleFrame() {
+    if (typeof requestAnimationFrame !== 'function') { paint(); return; }
+    if (frameQueued) return;
+    frameQueued = true;
+    requestAnimationFrame(() => { frameQueued = false; paint(); });
+  }
+
+
   // 一帧：跑到期定时器、越过长按阈值则展开、推进所有形状弹簧。
   const tick = now => {
     const dt = lastTickAt === null ? 0 : Math.max(0, now - lastTickAt);
@@ -813,13 +1046,21 @@
     mount(root, options) {
       const o = options || {};
       if (o.clock) clockNow = o.clock;
-      if (o.reducedMotion !== undefined) reducedMotion = !!o.reducedMotion;
       // 判据用能力而不是 typeof document：Task 6/7/10/11 的单测传裸对象，走
       // headless —— 状态机照常跑，只是不建 DOM、不起帧循环。
       headless = !root || typeof root.appendChild !== 'function';
+      if (o.reducedMotion !== undefined) reducedMotion = !!o.reducedMotion;
+      else if (!headless && typeof matchMedia === 'function') reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
       mounted = true;
       Island.enabled = !headless;
-      render = headless ? noop : () => scheduleFrame();
+      if (!headless) {
+        let backdrop = o.backdrop;
+        if (!backdrop && typeof getComputedStyle === 'function') {
+          backdrop = (getComputedStyle(document.documentElement).getPropertyValue('--paper') || '#ffffff').trim();
+        }
+        buildDom(root, backdrop || '#ffffff');
+      }
+      render = headless ? noop : scheduleFrame;
       commit();
     },
     start: options => (mounted ? start(options) : deadHandle),

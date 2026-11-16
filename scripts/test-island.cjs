@@ -27,9 +27,11 @@ function sameShape(actual, expected, message) {
   assert.deepEqual(plain(actual), plain(expected), message);
 }
 
-/* 在最小沙箱里加载引擎，返回 window.Island。无 DOM 也必须成功。 */
-function loadIsland() {
-  const sandbox = { window: {}, console };
+/* 在最小沙箱里加载引擎，返回 window.Island。无 DOM 也必须成功。
+   要测真渲染路径就把 DOM 桩作为沙箱全局传进去——引擎跑在 vm 里，
+   它看到的 document 是沙箱的全局，不是外层 realm 的 globalThis。 */
+function loadIsland(globals) {
+  const sandbox = Object.assign({ window: {}, console }, globals || {});
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(read('assets/island.js'), sandbox, { filename: 'assets/island.js' });
@@ -601,6 +603,209 @@ check('currentGeometry 给出可直接画 path 的盒尺寸', () => {
   assert.ok(Math.abs(geometry.top - 13.91) < 0.01);
   assert.equal(geometry.kind, 'compact');
   assert.equal(geometry.bubbleHeight, 0);
+});
+
+/* 手写最小 DOM（沿用 test-exercise-ui-harness.cjs 的思路，不引 jsdom）。
+   只实现引擎真正用到的能力；appendChild 必须存在，mount 用它区分真 DOM 与
+   headless。offsetWidth 可写，供槽位实测的测试设置宽度。 */
+function makeElement(tag) {
+  const classes = new Set();
+  const el = {
+    tag, children: [], attrs: {}, dataset: {}, style: {}, listeners: {},
+    textContent: '', hidden: false, offsetWidth: 0, offsetHeight: 0,
+    classList: {
+      add: (...names) => names.forEach(n => classes.add(n)),
+      remove: (...names) => names.forEach(n => classes.delete(n)),
+      toggle: (n, on) => (on ? classes.add(n) : classes.delete(n)),
+      contains: n => classes.has(n)
+    }
+  };
+  Object.defineProperty(el, 'className', {
+    get: () => [...classes].join(' '),
+    set: value => { classes.clear(); String(value).split(/\s+/).filter(Boolean).forEach(n => classes.add(n)); }
+  });
+  el.append = (...kids) => kids.forEach(kid => el.children.push(kid));
+  el.appendChild = kid => { el.children.push(kid); return kid; };
+  el.setAttribute = (k, v) => {
+    el.attrs[k] = String(v);
+    if (k === 'class') el.className = v;
+  };
+  el.getAttribute = k => (k in el.attrs ? el.attrs[k] : null);
+  el.addEventListener = (k, fn) => { (el.listeners[k] = el.listeners[k] || []).push(fn); };
+  el.querySelector = selector => findAll(el, selector)[0] || null;
+  el.querySelectorAll = selector => findAll(el, selector);
+  el.remove = () => {};
+  el.focus = () => {};
+  return el;
+}
+function findAll(el, selector, out = []) {
+  for (const kid of el.children || []) {
+    if (matches(kid, selector)) out.push(kid);
+    findAll(kid, selector, out);
+  }
+  return out;
+}
+function matches(el, selector) {
+  if (selector.startsWith('.')) return el.classList.contains(selector.slice(1));
+  if (selector.startsWith('[')) {
+    const name = selector.slice(1, -1).split('=')[0];
+    return el.attrs[name] !== undefined;
+  }
+  return el.tag === selector;
+}
+function makeDocument() {
+  return {
+    createElement: makeElement,
+    createElementNS: (ns, tag) => makeElement(tag),
+    documentElement: makeElement('html'),
+    body: makeElement('body'),
+    addEventListener() {},
+    querySelector: () => null
+  };
+}
+
+/* 真 DOM 路径：mount 拿到带 appendChild 的节点，于是建结构、起帧循环。 */
+function mountWithDom(options) {
+  const document = makeDocument();
+  const root = makeElement('div');
+  const Island = loadIsland({
+    document,
+    getComputedStyle: () => ({ getPropertyValue: () => ' #ffffff ' }),
+    matchMedia: () => ({ matches: false, addEventListener() {} })
+  });
+  let now = 0;
+  Island.mount(root, Object.assign({ clock: () => now }, options || {}));
+  const advance = seconds => {
+    const target = now + seconds;
+    while (now < target) { now = Math.min(target, now + 1 / 60); Island.internals.tick(now); }
+  };
+  return { Island, root, document, advance, rendered: () => root };
+}
+const findDeep = (el, selector) => (el && el.querySelector ? el.querySelector(selector) : null);
+const keylineOf = root => findDeep(root, '.island-keyline');
+const count = (el, selector) => findAll(el, selector).length;
+function fire(el, kind, init) {
+  (el.listeners[kind] || []).forEach(fn => fn(Object.assign({ preventDefault() {}, stopPropagation() {}, target: el, key: '' }, init || {})));
+}
+
+check('mount 出可聚焦胶囊 + SVG 形状 + 内容层', () => {
+  const { Island, root } = mountWithDom({ backdrop: '#ffffff' });
+  assert.equal(Island.enabled, true, '有真 DOM 就必须启用');
+  assert.ok(findDeep(root, 'svg'), '没有 svg 形状层');
+  assert.ok(findDeep(root, '.island-fill'), '没有填充 path');
+  const pill = findDeep(root, 'button');
+  assert.ok(pill, '胶囊必须是可聚焦的 button');
+  assert.equal(pill.attrs.type, 'button', '别把表单默认行为带进来');
+  assert.equal(pill.attrs['aria-expanded'], 'false');
+  assert.ok(findDeep(root, '.island-live'), '需要一条读屏播报');
+  const keyline = keylineOf(root);
+  assert.ok(!keyline || keyline.attrs['stroke-opacity'] === undefined || Number(keyline.attrs['stroke-opacity']) === 0,
+    '浅色页不画 keyline');
+});
+
+check('胶囊的读屏名来自活动 label，分裂时并列', () => {
+  const { Island, root } = mountWithDom();
+  Island.start({ id: 'p', label: '本章阅读进度 43%', compact: { trailing: { text: '43%' } } });
+  Island.internals.tick(0.1);
+  assert.match(findDeep(root, 'button').attrs['aria-label'], /43%/);
+  Island.start({ id: 't', label: '专注剩余 24 分 58 秒', group: 'focus', priority: 1, compact: { trailing: { text: '24:58' } } });
+  Island.internals.tick(0.2);
+  assert.match(findDeep(root, 'button').attrs['aria-label'], /专注剩余 24 分 58 秒, 本章阅读进度 43%/);
+});
+
+check('七个内容原子各自出 DOM', () => {
+  const atoms = [
+    ['glyph', { glyph: 'bookmark' }, '.island-glyph'],
+    ['text', { text: '43%' }, '.island-text'],
+    ['ring', { ring: 0.43 }, '.island-ring'],
+    ['bar', { bar: 0.43 }, '.island-bar'],
+    ['label', { label: '专注' }, '.island-label'],
+    ['time', { time: 25000, format: 'mm:ss' }, '.island-time']
+  ];
+  const { Island, root, advance } = mountWithDom();
+  atoms.forEach(([name, spec, selector], i) => {
+    Island.start({ id: 'atom' + i, label: name, compact: { leading: spec } });
+    advance(1 / 60);
+    assert.ok(count(root, selector) >= 1, `原子 ${name} 什么都没画`);
+    Island.end('atom' + i);
+    advance(1 / 60);
+  });
+  Island.start({
+    id: 'btn', label: '按钮',
+    expanded: { bottom: { buttons: [{ key: 'pause', label: '暂停' }, { key: 'end', label: '结束' }] } }
+  });
+  Island.expand('btn');
+  Island.internals.tick(0.2);
+  assert.ok(count(root, '.island-btn') >= 2, `展开面里没有按钮：${count(root, '.island-btn')}`);
+});
+
+check('按钮点击回调带 key，岛不猜语义', () => {
+  const { Island, root } = mountWithDom();
+  const seen = [];
+  Island.start({
+    id: 'btn', label: 'b',
+    expanded: { bottom: { buttons: [{ key: 'pause', label: '暂停', onPress: k => seen.push(k) }] } }
+  });
+  Island.expand('btn');
+  Island.internals.tick(0.2);
+  fire(findDeep(root, '.island-btn'), 'click');
+  sameShape(seen, ['pause']);
+});
+
+check('帧循环只写 d 与 transform/opacity，不碰布局属性', () => {
+  const { Island, root, advance } = mountWithDom();
+  Island.start({ id: 'p', label: 'p', compact: { leading: { glyph: 'bookmark' }, trailing: { text: '43%' } } });
+  advance(0.5);
+  const fill = findDeep(root, '.island-fill');
+  assert.ok(fill.attrs.d.length > 100, 'path d 必须是完整的形变路径');
+  assert.equal(fill.attrs.width, undefined);
+  assert.equal(fill.attrs.height, undefined);
+  assert.equal(fill.attrs.x, undefined);
+  assert.equal(fill.attrs.style, undefined, '样式要走 class/style 对象，不是 style 属性字符串');
+  for (const el of findAll(root, 'div').concat(findAll(root, 'span')).concat(findAll(root, 'button'))) {
+    for (const key of ['width', 'height', 'top', 'left']) {
+      assert.ok(el.attrs[key] === undefined, `${el.tag}.${el.className} 被写了布局属性 ${key}`);
+    }
+  }
+});
+
+check('形状随帧变化：从 idle 长到紧凑的过程中 d 一直在改', () => {
+  const { Island, root, advance } = mountWithDom();
+  const before = findDeep(root, '.island-fill').attrs.d;
+  Island.start({ id: 'p', label: 'p', compact: { leading: { glyph: 'bookmark' }, trailing: { text: '43%' } } });
+  advance(0.2);
+  const mid = findDeep(root, '.island-fill').attrs.d;
+  advance(1.4);
+  const after = findDeep(root, '.island-fill').attrs.d;
+  assert.notEqual(mid, before, '弹簧没驱动到路径上');
+  assert.notEqual(after, mid, '中途就没再更新');
+  assert.notEqual(after, before);
+});
+
+check('分裂时副胶囊出现，收起时隐藏', () => {
+  const { Island, root, advance } = mountWithDom();
+  Island.start({ id: 'p', label: 'p', group: 'reading', compact: { leading: { glyph: 'bookmark' }, trailing: { text: '43%' } } });
+  advance(1);
+  assert.equal(findDeep(root, '.island-bubble').hidden, true, '单活动不该有副胶囊');
+  Island.start({ id: 't', label: 't', group: 'focus', priority: 1, compact: { leading: { glyph: 'lotus' }, trailing: { text: '24:58' } } });
+  advance(1);
+  assert.equal(findDeep(root, '.island-bubble').hidden, false, '两条活动必须画出副胶囊');
+  Island.end('t');
+  advance(1);
+  assert.equal(findDeep(root, '.island-bubble').hidden, true);
+});
+
+check('键盘与外部点击接到收合/展开', () => {
+  const { Island, root } = mountWithDom();
+  Island.start({ id: 'a', label: 'a', compact: { trailing: { text: '1' } }, expanded: { center: { text: 'X' } } });
+  const pill = findDeep(root, 'button');
+  fire(pill, 'keydown', { key: 'Enter' });
+  Island.internals.tick(0.1);
+  assert.equal(Island.presentation, 'expanded', 'Enter 该展开');
+  assert.equal(pill.attrs['aria-expanded'], 'true');
+  fire(pill, 'keydown', { key: 'Escape' });
+  Island.internals.tick(0.1);
+  assert.notEqual(Island.presentation, 'expanded', 'Escape 该收合');
 });
 
 check('参考源与上游许可随仓库发布', () => {
