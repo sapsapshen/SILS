@@ -752,21 +752,25 @@ check('按钮点击回调带 key，岛不猜语义', () => {
   sameShape(seen, ['pause']);
 });
 
-check('帧循环只写 d 与 transform/opacity，不碰布局属性', () => {
+check('帧循环把弹簧写进 d 与命中盒，而不是任何布局属性', () => {
   const { Island, root, advance } = mountWithDom();
   Island.start({ id: 'p', label: 'p', compact: { leading: { glyph: 'bookmark' }, trailing: { text: '43%' } } });
-  advance(0.5);
+  advance(1.5);
   const fill = findDeep(root, '.island-fill');
   assert.ok(fill.attrs.d.length > 100, 'path d 必须是完整的形变路径');
-  assert.equal(fill.attrs.width, undefined);
-  assert.equal(fill.attrs.height, undefined);
-  assert.equal(fill.attrs.x, undefined);
-  assert.equal(fill.attrs.style, undefined, '样式要走 class/style 对象，不是 style 属性字符串');
-  for (const el of findAll(root, 'div').concat(findAll(root, 'span')).concat(findAll(root, 'button'))) {
-    for (const key of ['width', 'height', 'top', 'left']) {
-      assert.ok(el.attrs[key] === undefined, `${el.tag}.${el.className} 被写了布局属性 ${key}`);
-    }
+  for (const key of ['width', 'height', 'x', 'y', 'style']) {
+    assert.equal(fill.attrs[key], undefined, `path 上不该有 ${key}`);
   }
+  const pill = findDeep(root, 'button');
+  for (const key of ['width', 'height', 'top', 'left']) {
+    assert.equal(pill.attrs[key], undefined, '命中区走 style，不用属性');
+  }
+  // 命中区必须与画出来的形状一致，否则点得到却看不见（或反之）
+  const points = pathPoints(fill.attrs.d);
+  const drawn = Math.max(...points.map(([x]) => x)) - Math.min(...points.map(([x]) => x));
+  const hit = parseFloat(pill.style.width);
+  assert.ok(Math.abs(drawn - hit) < 0.5, `画出来 ${drawn}px 而可点 ${hit}px`);
+  assert.ok(Math.abs(hit - 150.9) < 1.2, `静止胶囊宽应约 151px，实测 ${hit}`);
 });
 
 check('形状随帧变化：从 idle 长到紧凑的过程中 d 一直在改', () => {
@@ -806,6 +810,42 @@ check('键盘与外部点击接到收合/展开', () => {
   fire(pill, 'keydown', { key: 'Escape' });
   Island.internals.tick(0.1);
   assert.notEqual(Island.presentation, 'expanded', 'Escape 该收合');
+});
+
+check('index.html 装配岛且不破 eager 白名单', () => {
+  const html = read('index.html');
+  assert.match(html, /<link rel="stylesheet" href="assets\/island\.css\?v=[0-9a-f]{12}">/);
+  assert.match(html, /<script defer src="assets\/island\.js\?v=[0-9a-f]{12}"><\/script>/);
+  assert.match(html, /<div id="islandRoot"><\/div>/);
+  const scripts = [...html.matchAll(/<script[^>]*\ssrc="([^"]+)"/g)].map(m => m[1]);
+  const eager = [...html.matchAll(/<script(?![^>]*\bdefer\b)[^>]*\ssrc="([^"]+)"/g)].map(m => m[1].split('?')[0]);
+  assert.ok(scripts.some(s => s.startsWith('assets/island.js')), 'island.js 没被引用');
+  assert.deepEqual(eager.sort(), ['assets/content.js', 'assets/i18n.js', 'assets/locale/zh.js'],
+    '岛必须 defer：首页只允许三个必要脚本先跑');
+});
+
+check('island.css 压住 header、只在阅读视图出现、打印时消失', () => {
+  const css = read('assets/island.css');
+  assert.match(css, /--island-z:\s*60/);
+  assert.match(css, /--island-top:\s*13\.91px/);
+  assert.match(css, /#islandRoot\s*\{[^}]*position:\s*fixed/);
+  assert.match(css, /#islandRoot\s*\{[^}]*pointer-events:\s*none/);
+  assert.match(css, /\.island-pill[^{]*\{[^}]*pointer-events:\s*auto/s);
+  assert.match(css, /body\[data-view="reader"\] #islandRoot\s*\{\s*display:\s*block/);
+  assert.match(css, /@media print\s*\{\s*#islandRoot\s*\{\s*display:\s*none;?\s*\}\s*\}/);
+});
+
+check('岛内不声明 transition，也不引任何外部资源', () => {
+  const css = read('assets/island.css'), js = read('assets/island.js');
+  // 时长全部由 JS 弹簧逐帧积分；这里出现 transition 就等于两套时钟打架。
+  assert.equal((css.match(/transition:/g) || []).length, 0, 'island.css 里不该有 transition');
+  assert.equal((css.match(/animation:/g) || []).length, 0, 'island.css 里不该有 animation');
+  for (const bad of ['@import', '@font-face', 'url(', 'src="http', 'href="http', 'fetch(', 'XMLHttpRequest']) {
+    assert.ok(!css.includes(bad), `island.css 出现外部依赖 ${bad}`);
+    assert.ok(!js.includes(bad), `island.js 出现外部依赖 ${bad}`);
+  }
+  // SVG 命名空间是 XML 标识符，不是网络地址：它必须存在且仅此一处。
+  assert.equal((js.match(/http:\/\/www\.w3\.org\/2000\/svg/g) || []).length, 1, 'SVG 命名空间应只声明一次');
 });
 
 check('参考源与上游许可随仓库发布', () => {

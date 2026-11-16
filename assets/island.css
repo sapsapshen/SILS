@@ -1,0 +1,206 @@
+/* 灵动岛的内容排版。几何不在这里：形状由 assets/island.js 出 SVG path，
+   本文件只负责岛内文字、图标、环、条、按钮的样子。
+
+   这一层刻意不用 assets/motion.css 的三档时长——岛的动效时长是弹簧参数
+   （response / dampingFraction）决定的连续量，逐帧由 JS 积分到路径上，见
+   docs/reference/islandcn/motion-subset.ts 的标定注释。motion.css 要求的
+   "只动 transform/opacity"在这里同样成立：本文件不声明任何 transition。 */
+
+:root {
+  --island-z: 60;
+  --island-top: 13.91px;      /* 与 assets/island.js 的 METRICS.top 同一个数 */
+  --island-ink: #fff;
+  --island-ink-quiet: rgba(255, 255, 255, .62);
+  --island-accent: #4a5cff;   /* 与 --brand/--purple 同一族，岛内唯一彩色 */
+  --island-raise: rgba(255, 255, 255, .18);
+  --island-raise-hover: rgba(255, 255, 255, .28);
+}
+
+/* 整站只在阅读视图挂岛；容器本身不吃点击，胶囊自己吃。 */
+#islandRoot {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0;
+  z-index: var(--island-z);
+  display: none;
+  pointer-events: none;
+}
+body[data-view="reader"] #islandRoot { display: block; }
+
+.island {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 402px;               /* 上游：宽屏不拉伸，岛恒按手机尺寸画 */
+  height: 300px;
+  margin-left: -201px;        /* viewBox 的原点落在屏幕中线 */
+  pointer-events: none;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.island-shape { position: absolute; inset: 0; width: 402px; height: 300px; overflow: visible; }
+.island-fill { fill: #000; }
+.island-keyline { fill: none; stroke: #fff; stroke-width: 1.5; opacity: 0; }
+.island-keyline[stroke-opacity] { opacity: 1; }
+.island-sensor {
+  position: absolute;
+  top: var(--island-top);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 94.85px;
+  height: 36.84px;
+  border-radius: 18.42px;
+  background: #000;
+  pointer-events: none;
+}
+
+/* 胶囊本体：可聚焦的按钮，盒由 JS 每帧写到 spring 算出的尺寸。 */
+.island-pill, .island-bubble {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 7.18px;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: var(--island-ink);
+  font-size: 15px;
+  line-height: 1.4;
+  text-align: left;
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.island-bubble { padding: 0 6.42px; justify-content: flex-start; gap: 6.085px; cursor: default; }
+.island-pill:focus-visible { outline: 3px solid #fff; outline-offset: 3px; border-radius: 20px; }
+
+/* 中间 94.85px 恒留给传感器：两侧内容只贴外缘，这是实测规则不是留白偏好。 */
+.island-slot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 72px;
+  overflow: hidden;
+  flex: none;
+}
+.island-slot.trailing { justify-content: flex-end; }
+
+.island-text, .island-time, .island-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.island-text, .island-time { color: var(--island-ink); }
+.island-label {
+  font-size: 15px;
+  color: var(--island-ink-quiet);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;           /* 18pt 图标之后约九个字 */
+}
+.island-value { font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
+.island-title {
+  display: block;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--island-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.island-subtitle {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--island-ink-quiet);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.island-glyph { flex: none; color: var(--island-ink); }
+.island-ring { flex: none; }
+.island-ring circle { fill: none; stroke-linecap: round; }
+.island-ring-track { stroke: var(--island-raise); }
+.island-ring-arc { stroke: var(--island-accent); transform: rotate(-90deg); transform-origin: center; }
+.island-bar {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--island-raise);
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.island-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--island-accent);
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+
+/* 展开面：盒同样由 JS 写，内部按上游的 region 分配。 */
+.island-expanded {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18.18px 18.5px 18.35px;
+  color: var(--island-ink);
+  font-size: 15px;
+  line-height: 1.45;
+  pointer-events: none;
+}
+.island-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-width: 0; }
+.island-region { display: flex; align-items: flex-start; gap: 8px; min-width: 0; flex: 1 1 auto; }
+.island-region[data-slot="trailing"] { flex: none; justify-content: flex-end; }
+.island-region[data-slot="bottom"] { flex-direction: column; gap: 6px; }
+.island-buttons { display: flex; align-items: center; gap: 8px; }
+.island-btn {
+  min-width: 44px;
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 15px;
+  background: var(--island-raise);
+  color: var(--island-ink);
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.island-btn:hover { background: var(--island-raise-hover); }
+.island-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+@media (pointer: coarse) { .island-btn { min-height: 44px; } }
+
+/* 读屏播报：可视上不可见，但必须真的在 DOM 里。 */
+.island-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 展开面的投影：两层 drop-shadow，数值取自 metrics.expanded.shadow（blur 已是
+   CSS 口径的 2σ）。只在展开时出现——胶囊本身不投影，这是上游的实测结论。 */
+.island-shape { filter: none; }
+.island.is-expanded .island-shape {
+  filter: drop-shadow(0 10.7px 30.76px rgba(0, 0, 0, .3533))
+          drop-shadow(0 23.43px 81.03px rgba(0, 0, 0, .0326));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 弹簧已由 assets/island.js 换成临界阻尼；本层没有 transition，无需再关。 */
+  .island-btn:hover { background: var(--island-raise); }
+}
+
+@media print { #islandRoot { display: none; } }

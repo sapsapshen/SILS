@@ -918,15 +918,20 @@
     return n;
   };
 
-  // ---- 槽位放置 ----
-  // 每帧只写 transform：槽位的宽度交给 CSS 的 max-width，不在此处按帧设变量。
-  const place = (slot, x) => {
-    slot.style.transform = `translate(${x.toFixed(2)}px, 0)`;
+  // ---- 命中区与盒 ----
+  // 每帧把弹簧算出的盒写到节点上：pill/bubble/expanded 都是 fixed 岛内部的
+  // 绝对定位元素，重排范围只有这几个节点，不触及正文。内容的左右位置交给
+  // CSS 的 flex space-between，于是"两侧贴外缘、中间留给传感器"这条实测规则
+  // 不需要再算一遍。
+  const box = (n, left, right, top, height) => {
+    n.style.left = left.toFixed(2) + 'px';
+    n.style.top = top.toFixed(2) + 'px';
+    n.style.width = Math.max(0, right - left).toFixed(2) + 'px';
+    n.style.height = height.toFixed(2) + 'px';
   };
 
   const paintSlots = scene => {
     const p = scene.presentation;
-    const geometry = currentGeometry();
     const compact = p.kind === 'compact' ? p : null;
     if (compact) {
       fillSlot(node.pill.children[0], compact.leading);
@@ -945,12 +950,7 @@
       fillSlot(node.expandedBottom, p.bottom);
       measuredNodes = { expandedHeight: (node.expanded.offsetHeight || HEADLESS.expandedHeight) };
     }
-    // 槽位贴外缘：左槽从左内边距起，右槽贴在右内边距处。
-    const c = METRICS.compact;
-    const pillLeft = geometry.left + c.edgePadding;
-    place(node.pill, geometry.left, geometry.right - geometry.left);
-    place(node.pill.children[0], pillLeft - geometry.left, c.maxSlotWidth);
-    place(node.pill.children[1], geometry.right - geometry.left - c.edgePadding, c.maxSlotWidth);
+    // 槽位的左右归属由 CSS 的 flex space-between 决定，这里不再按帧算位置。
   };
 
   const fillSlot = (slot, spec) => {
@@ -976,9 +976,15 @@
     if (!mounted || headless) return;
     const scene = deriveScene(state);
     const geometry = currentGeometry();
-    node.fill.setAttribute('d', outlineOf(geometry));
-    node.keyline.setAttribute('d', outlineOf(geometry));
+    const fill = outlineOf(geometry);
+    node.fill.setAttribute('d', fill);
+    node.keyline.setAttribute('d', fill);
+    box(node.pill, geometry.left, geometry.right, geometry.top, geometry.height);
+    box(node.expanded, geometry.left, geometry.right, geometry.top, geometry.height);
+    box(node.bubble, geometry.bubbleLeft, geometry.bubbleRight, geometry.top, geometry.bubbleHeight);
     const expanded = geometry.kind === 'expanded';
+    // 阴影只在展开时出现（上游实测胶囊本身不投影），交给 CSS 的 .is-expanded。
+    node.region.classList.toggle('is-expanded', expanded);
     node.pill.setAttribute('aria-expanded', String(expanded));
     node.pill.setAttribute('aria-label', scene.label || '');
     node.pill.hidden = expanded;
