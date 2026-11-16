@@ -690,24 +690,52 @@
     if (spec.bar !== undefined || spec.buttons) return 0;
     return 0;
   };
-  // DOM 可用时优先实测：槽位宽度是内容决定的，估算只在没有页面时兜底。
-  const measureSlot = (spec, node) => (node && node.offsetWidth ? node.offsetWidth : specWidth(spec));
+  // 槽位宽度是内容决定的，早晚要实测。但实测只能发生在"内容写完之后的下一帧"：
+  // 同一帧里先改 DOM 再读 offsetWidth 就是 layout thrash——浏览器实测把这种写法
+  // 列成了全站最大的一条强制重排（15ms）。所以这里只读缓存，写 DOM 的地方举手。
+  const measured = {
+    leading: 0, trailing: 0,
+    detachedLeading: 0, detachedTrailing: 0,
+    expandedHeight: 0
+  };
+  let measurePending = false;
 
-  const measureOf = (scene, nodes) => {
+  const widthOf = slot => (slot && slot.children.length ? slot.offsetWidth : 0);
+  // 只有当前看得见的那部分才更新：收起的节点 offsetHeight 是 0，读它会抹掉
+  // 上一次量到的真实尺寸。
+  const measureNow = () => {
+    if (headless || !node.pill) return;
+    if (!node.pill.hidden) {
+      measured.leading = widthOf(node.pill.children[0]);
+      measured.trailing = widthOf(node.pill.children[1]);
+    }
+    if (!node.bubble.hidden) {
+      measured.detachedLeading = widthOf(node.bubble.children[0]);
+      measured.detachedTrailing = widthOf(node.bubble.children[1]);
+    }
+    if (!node.expanded.hidden) {
+      const e = METRICS.expanded;
+      measured.expandedHeight = Math.max(0, node.expanded.offsetHeight - e.padding.top - e.padding.bottom);
+    }
+  };
+
+  const measureOf = scene => {
     const p = scene.presentation;
     const out = emptyMeasure();
+    const live = !headless;
+    const side = (spec, value) => (live && value ? value : specWidth(spec));
     if (p.kind === 'compact') {
-      out.leading = measureSlot(p.leading, nodes && nodes.leading);
-      out.trailing = measureSlot(p.trailing, nodes && nodes.trailing);
+      out.leading = side(p.leading, measured.leading);
+      out.trailing = side(p.trailing, measured.trailing);
     } else if (p.kind === 'minimal') {
       out.split = {
-        attached: { leading: specWidth(p.split.attached.leading), trailing: specWidth(p.split.attached.trailing) },
-        detached: { leading: specWidth(p.split.detached.leading), trailing: specWidth(p.split.detached.trailing) }
+        attached: { leading: side(p.split.attached.leading, measured.leading), trailing: side(p.split.attached.trailing, measured.trailing) },
+        detached: { leading: side(p.split.detached.leading, measured.detachedLeading), trailing: side(p.split.detached.trailing, measured.detachedTrailing) }
       };
-      out.attached = specWidth(p.attached && (p.attached.leading !== undefined ? p.attached.leading : p.attached));
-      out.detached = specWidth(p.detached && (p.detached.leading !== undefined ? p.detached.leading : p.detached));
+      out.attached = side(p.attached, measured.leading);
+      out.detached = side(p.detached, measured.detachedLeading);
     } else if (p.kind === 'expanded') {
-      out.expandedHeight = (nodes && nodes.expandedHeight) || HEADLESS.expandedHeight;
+      out.expandedHeight = live && measured.expandedHeight ? measured.expandedHeight : HEADLESS.expandedHeight;
     }
     return out;
   };
@@ -725,7 +753,6 @@
   let lastPrimaryId = null;
   let lastScreenWidth = METRICS.screen.width;
   let lastTickAt = null;
-  let measuredNodes = null;
 
   const retarget = (target, name) => {
     for (const key of SHAPE_KEYS) {
@@ -746,7 +773,7 @@
       swelling: pressKind === 'hold' && (clockNow() - pressAt) >= MOTION.press.decide,
       alert: alerting.size > 0
     };
-    const target = shapeTarget(kind, measureOf(scene, measuredNodes), lastScreenWidth);
+    const target = shapeTarget(kind, measureOf(scene), lastScreenWidth);
     retarget(target, shapeTransition(lastKind, kind, options));
     lastKind = kind;
     lastPrimaryId = primaryId;
@@ -951,20 +978,19 @@
     if (compact) {
       fillSlot(node.pill.children[0], compact.leading);
       fillSlot(node.pill.children[1], compact.trailing);
-      measuredNodes = { leading: node.pill.children[0], trailing: node.pill.children[1] };
     } else if (p.kind === 'minimal') {
       fillSlot(node.pill.children[0], p.split ? p.split.attached.leading : null);
       fillSlot(node.pill.children[1], p.split ? p.split.attached.trailing : null);
       fillSlot(node.bubble.children[0], p.split ? p.split.detached.leading : null);
       fillSlot(node.bubble.children[1], p.split ? p.split.detached.trailing : null);
-      measuredNodes = { leading: node.pill.children[0], trailing: node.pill.children[1] };
     } else if (p.kind === 'expanded') {
       fillSlot(node.expandedLeading, p.leading);
       fillSlot(node.expandedCenter, p.center);
       fillSlot(node.expandedTrailing, p.trailing);
       fillSlot(node.expandedBottom, p.bottom);
-      measuredNodes = { expandedHeight: (node.expanded.offsetHeight || HEADLESS.expandedHeight) };
     }
+    // 内容刚写完：量尺寸留到下一帧，别在这一帧读。
+    measurePending = true;
     // 槽位的左右归属由 CSS 的 flex space-between 决定，这里不再按帧算位置。
   };
 
@@ -1042,6 +1068,12 @@
       timer.fn();
     }
     if (pressKind === 'hold' && !state.expanded && now - pressAt >= MOTION.longPress) expand();
+    // 上一帧写完的内容在这一帧量尺寸：此刻样式与布局是干净的，读它不打断重排。
+    if (measurePending) {
+      measurePending = false;
+      measureNow();
+      syncShape();
+    }
     for (const key of SHAPE_KEYS) shapeValues[key].step(dt);
     // 每帧通知订阅者：专注计时用它自走倒计时，避免每秒几十次 update 调用。
     for (const fn of frameSubscribers) fn(now);
