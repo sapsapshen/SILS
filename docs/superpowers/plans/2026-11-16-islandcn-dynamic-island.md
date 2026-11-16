@@ -22,6 +22,8 @@
 - 岛只在 `document.body.dataset.view === 'reader'` 时挂载显示；首页/目录/路径/练习/社区视图与 `login.html`、`404.html`、`assets/analytics.html` 不出现岛
 - 上游数值不得改写：`docs/reference/islandcn/` 是唯一权威，代码里每个魔法数都要能指回该目录的某个文件
 - 提交作者身份 `shenmian`；推送走一次性 HTTPS URL（本机 22 端口被代理屏蔽），不改 `remote.origin.url`
+- 步骤里写的 `N passed` 是按本计划逐条累加的期望值；若你在某任务里多加了断言，以「全绿 + 本任务新增断言全部通过」为准，不要为了凑数字删断言
+- 实施基线：`72c7a0e`（本计划提交）。Task 13 的差异同步以它为起点计算
 
 ---
 
@@ -354,9 +356,29 @@ node scripts/test-island.cjs
       dismiss: { response: 0.442, dampingFraction: 0.97, delay: 0 },
       resize: { response: 0.5, dampingFraction: 0.82, delay: 0 }
     },
-    // corner 表照 motion-subset.ts 的 corner.*；与 shape 同 transition 键
-    corner: { /* Task 2 Step 3 填入 */ },
-    press: { squish: { response: 0.3, dampingFraction: 1 }, swell: { response: 0.803, dampingFraction: 0.641 }, swellTime: 0.22 },
+    // corner：照 docs/reference/islandcn/motion-subset.ts 的 corner.*，与 shape 同 12 键
+    corner: {
+      appear: { response: 0.483, dampingFraction: 0.62, delay: 0 },
+      expand: { response: 0.448, dampingFraction: 0.87, delay: 0.018 },
+      pressExpand: { response: 0.32, dampingFraction: 0.831, delay: 0.019 },
+      appearExpand: { response: 0.452, dampingFraction: 0.865, delay: 0.02 },
+      swap: { response: 0.41, dampingFraction: 0.888, delay: 0.244 },
+      collapse: { response: 0.449, dampingFraction: 0.94, delay: 0.01 },
+      alertCollapse: { response: 0.47, dampingFraction: 0.86, delay: 0.009 },
+      collapseSplit: { response: 0.36, dampingFraction: 0.865, delay: 0 },
+      split: { response: 0.505, dampingFraction: 0.815, delay: 0 },
+      unsplit: { response: 0.5, dampingFraction: 0.74, delay: 0 },
+      dismiss: { response: 0.442, dampingFraction: 0.97, delay: 0 },
+      resize: { response: 0.5, dampingFraction: 0.82, delay: 0 }
+    },
+    // press：上游 motion.ts press 块里移植用到的四项 + 三个阈值
+    press: {
+      down: { response: 0.45, dampingFraction: 1 },
+      up: { response: 0.36, dampingFraction: 0.62 },
+      swell: { response: 0.803, dampingFraction: 0.641 },
+      release: { response: 0.3, dampingFraction: 1.5 },
+      swellTime: 0.22, decide: 0.1, tapReturn: 0.22, releaseReturn: 0.17, idleTapReturn: 0.2
+    },
     alertHold: 5.975, alertContentDelay: 0.12, longPress: 0.216,
     reduced: { duration: 0.2 }
   };
@@ -407,16 +429,30 @@ node scripts/test-island.cjs
 })();
 ```
 
-- [ ] **Step 3: 补 `corner` 弹簧表**
+- [ ] **Step 3: 补 corner 与 press 的断言**
 
-从 `docs/reference/islandcn/motion-subset.ts` 的 `corner` 段逐键抄入 `MOTION.corner`，键与 `shape` 同（12 个 transition），每键 `{response, dampingFraction, delay?}`。抄完后在测试里加一条锁定三条最常走的路径：
+`corner` 与 `press` 已在 Step 2 内联填好，此步把它们钉进测试（这些数字决定"展开被打断时圆角是否比宽度慢"，最容易被顺手改错）：
 
 ```js
-check('corner 弹簧与 shape 同键且至少覆盖四种 transition', () => {
+check('corner 与 press 弹簧照上游，且 corner 在多数 transition 上慢于 shape', () => {
   const { MOTION } = loadIsland().internals;
-  const keys = ['appear', 'expand', 'collapse', 'dismiss'];
-  keys.forEach(k => assert.ok(MOTION.corner[k], `corner.${k} missing`));
+  assert.deepEqual(MOTION.corner.expand, { response: 0.448, dampingFraction: 0.87, delay: 0.018 });
+  assert.deepEqual(MOTION.corner.swap, { response: 0.41, dampingFraction: 0.888, delay: 0.244 });
+  assert.deepEqual(MOTION.corner.alertCollapse, { response: 0.47, dampingFraction: 0.86, delay: 0.009 });
+  assert.deepEqual(MOTION.press.swell, { response: 0.803, dampingFraction: 0.641 });
+  assert.deepEqual(MOTION.press.release, { response: 0.3, dampingFraction: 1.5 });
+  assert.equal(MOTION.press.swellTime, 0.22);
+  assert.equal(MOTION.press.decide, 0.1);
+  assert.equal(MOTION.longPressBubble ?? 0.224, 0.224);
+  // 上游事实：胶囊到胶囊时半径恒为高度一半，这两条 corner 弹簧与 body 同值
+  assert.deepEqual(MOTION.corner.split, MOTION.body.split);
+  assert.deepEqual(MOTION.corner.unsplit, MOTION.body.unsplit);
+});
+
+check('corner 与 shape 的 transition 键集合一致', () => {
+  const { MOTION } = loadIsland().internals;
   assert.deepEqual(Object.keys(MOTION.corner).sort(), Object.keys(MOTION.shape).sort());
+  assert.deepEqual(Object.keys(MOTION.body).sort(), Object.keys(MOTION.shape).sort());
 });
 ```
 
@@ -1163,10 +1199,13 @@ git commit -m "feat(island): alert 与长按时序及减动效退化"
 沿用 `test-exercise-ui-harness.cjs` 的思路（手写最小 DOM，不引 jsdom）。测试里需要：`createElement`/`append`/`setAttribute`/`classList`/`querySelectorAll`/`dataset`/`addEventListener` 与 `Element.children` 树；`requestAnimationFrame` 用假时钟驱动。
 
 ```js
+/* 手写最小 DOM：只实现引擎真正用到的能力。appendChild 必须存在，
+   因为 mount 用「有没有 appendChild」区分真实 DOM 与 headless（见 Step 3）。 */
 function fakeDom() {
   const make = tag => {
     const el = { tag, children: [], attrs: {}, dataset: {}, style: {}, listeners: {}, textContent: '' };
     el.append = (...kids) => el.children.push(...kids);
+    el.appendChild = kid => { el.children.push(kid); return kid; };
     el.setAttribute = (k, v) => { el.attrs[k] = String(v); };
     el.getAttribute = k => (k in el.attrs ? el.attrs[k] : null);
     el.classList = { add: () => {}, remove: () => {}, toggle: () => {}, contains: () => false };
@@ -1178,11 +1217,41 @@ function fakeDom() {
   return { make, root: make('div') };
 }
 
-check('mount 出可聚焦胶囊 + SVG 形状 + 内容层', () => {
+/* 深度工具：按标签或类名在桩树里找节点 */
+function findDeep(el, tagOrClass) {
+  if (!el || !el.children) return null;
+  for (const kid of el.children) {
+    if (kid.tag === tagOrClass || (kid.attrs.class || '').split(' ').includes(tagOrClass)) return kid;
+    const hit = findDeep(kid, tagOrClass);
+    if (hit) return hit;
+  }
+  return null;
+}
+function findAllDeep(el, tagOrClass, out = []) {
+  for (const kid of el.children || []) {
+    if (kid.tag === tagOrClass || (kid.attrs.class || '').split(' ').includes(tagOrClass)) out.push(kid);
+    findAllDeep(kid, tagOrClass, out);
+  }
+  return out;
+}
+const count = (root, tagOrClass) => findAllDeep(root, tagOrClass).length;
+const keylineOf = root => findDeep(root, 'island-keyline');
+function fire(el, kind) { (el.listeners[kind] || []).forEach(fn => fn({ preventDefault() {}, target: el, key: '' })); }
+
+/* 建一套带假时钟的「真 DOM」环境：mount 走真实渲染路径 */
+function mountWithDom() {
   const { make, root } = fakeDom();
   globalThis.document = { createElement: make, documentElement: make('html'), addEventListener() {}, body: make('body') };
+  globalThis.getComputedStyle = () => ({ getPropertyValue: () => '#ffffff' });
   const Island = loadIsland();
-  Island.mount(root, { backdrop: '#ffffff' });
+  let now = 0;
+  Island.mount(root, { backdrop: '#ffffff', clock: () => now });
+  const advance = seconds => { const target = now + seconds; while (now < target) { now += 1 / 60; Island.internals.tick(now); } };
+  return { Island, root, rendered: () => root, advance, at: () => now };
+}
+
+check('mount 出可聚焦胶囊 + SVG 形状 + 内容层', () => {
+  const { Island, root } = mountWithDom();
   assert.equal(Island.enabled, true);
   const svg = root.children.find(c => c.tag === 'svg');
   assert.ok(svg, 'no svg');
@@ -1193,10 +1262,7 @@ check('mount 出可聚焦胶囊 + SVG 形状 + 内容层', () => {
 });
 
 check('胶囊的读屏名来自活动 label，分裂时是并列串', () => {
-  const { root } = fakeDom();
-  globalThis.document = { createElement: fakeDom().make, documentElement: fakeDom().make('html'), addEventListener() {}, body: fakeDom().make('body') };
-  const Island = loadIsland();
-  Island.mount(root, {});
+  const { Island, root } = mountWithDom();
   Island.start({ id: 'p', label: '本章阅读进度 43%', compact: { trailing: { text: '43%' } } });
   assert.match(root.children.find(c => c.attrs.role === 'button').attrs['aria-label'], /43%/);
 });
@@ -1770,7 +1836,7 @@ python3 -m http.server 4173 --bind 127.0.0.1 &
 3. 点「专注计时」：分裂成主胶囊（倒计时）+ 副胶囊（ring）；`span ≈ 245.77px`，副胶囊宽恒 62.18px
 4. 长按主胶囊 0.3s：展开，里面章节名、进度条、今日累计、三个按钮；点岛外与 `Escape` 都收合
 5. 岛上「加 5 分钟」「暂停」「继续」「结束」逐个点
-6. 把系统时间或 `target` 调小让倒计时到 0（DevTools 里改 `localStorage` 后刷新更快）：alert 展开、约 6s 后回落、7s 后消失，`localStorage` 里 `sessions` 增一条
+6. 到点完成：在 DevTools 控制台跑 `FocusTimer.start(3000)`（3 秒会话）等它自然走完 —— 看 alert 展开、约 6s 后回落、7s 后消失，`localStorage` 里 `sessions` 增一条。**不要改系统时钟。**
 7. 刷新页面：进行中的会话按墙钟恢复
 8. 切 English / Español：岛内所有文案与数字格式跟着变
 9. DevTools → Rendering → `prefers-reduced-motion: reduce`：形状无过冲、无 blur，功能仍可用
@@ -1812,14 +1878,17 @@ ssh shenmian 'cd /data/ms-cookbook && mkdir -p backups && tar --exclude=backups 
 
 - [ ] **Step 3: 只同步本次差异文件**
 
+同步范围以**实施起点的基线提交**为准，不要数提交条数：
+
 ```bash
-git diff --name-only HEAD~6..HEAD      # 本计划提交涉及的清单
+BASE=72c7a0e                      # 本计划提交的 SHA，实现前的最后一个 commit
+git -C D:/Coding/ms-cookbook diff --name-only "$BASE"..HEAD
 ```
 
 按该清单 tar 传输并解到 `/data/ms-cookbook`，**必须排除** `ecosystem.config.js`、`run.sh`、`index.html.bak.*`、`.data/`：
 
 ```bash
-git diff --name-only HEAD~6..HEAD | tr '\n' '\0' | tar --null -czf /tmp/island-sync.tgz -T - --exclude='ecosystem.config.js' --exclude='run.sh'
+git diff --name-only "$BASE"..HEAD | tr '\n' '\0' | tar --null -czf /tmp/island-sync.tgz -T - --exclude='ecosystem.config.js' --exclude='run.sh'
 scp /tmp/island-sync.tgz shenmian:/tmp/
 ssh shenmian 'cd /data/ms-cookbook && tar -xzf /tmp/island-sync.tgz && rm /tmp/island-sync.tgz'
 ```
