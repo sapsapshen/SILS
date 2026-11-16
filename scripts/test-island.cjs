@@ -1269,6 +1269,50 @@ check('集成：专注活动经真渲染器显示 mm:ss，并随墙钟走', () =
   assert.equal(F.snapshot().phase, 'none');
 });
 
+check('专注按钮三态：aria-pressed 说的是会话活着没有', () => {
+  // 按钮是 none→start / paused→resume / running→pause 的三态循环，读屏软件
+  // 只能靠 aria-pressed 判断"专注计时开着没"。暂停时会话还在、岛还在显示、
+  // 再点还会继续，所以 pressed 必须是 true，否则等于告诉用户计时已经关了。
+  let ms = 1763300000000;
+  class FakeDate extends Date {
+    constructor(...args) { if (args.length) super(...args); else super(ms); }
+    static now() { return ms; }
+  }
+  const dom = makeDocument();
+  const root = makeElement('div');
+  const button = makeElement('button');
+  button.setAttribute('aria-pressed', 'false');
+  dom.getElementById = id => (id === 'islandRoot' ? root : id === 'focusTimerButton' ? button : null);
+  const sandbox = {
+    window: { addEventListener() {} },
+    console,
+    document: dom,
+    Date: FakeDate,
+    setTimeout: fn => { fn(); return 0; },
+    getComputedStyle: () => ({ getPropertyValue: () => ' #ffffff ' }),
+    matchMedia: () => ({ matches: false, addEventListener() {} })
+  };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(read('assets/island.js'), sandbox, { filename: 'assets/island.js' });
+  vm.runInContext(read('assets/focus.js'), sandbox, { filename: 'assets/focus.js' });
+  const Island = sandbox.window.Island;
+  const F = sandbox.window.FocusTimer;
+  const click = () => button.listeners.click.forEach(fn => fn());
+  const state = () => [button.getAttribute('aria-pressed'), dom.body.dataset.focusTimer];
+  assert.deepEqual(state(), ['false', ''], '没开始会话时按钮不该按下');
+  click();
+  assert.deepEqual(state(), ['true', 'running'], '开始会话后按钮应按下');
+  click();
+  assert.deepEqual(state(), ['true', 'paused'], '暂停时会话还活着，按钮不该看起来像关着');
+  click();
+  assert.deepEqual(state(), ['true', 'running'], '再点该继续，并按住状态');
+  ms += 60_000;
+  F.stop();
+  Island.internals.tick(ms / 1000);
+  assert.deepEqual(state(), ['false', 'complete'], '会话结束后按钮松开');
+});
+
 check('参考源与上游许可随仓库发布', () => {
   for (const f of ['spring.ts', 'path.ts', 'geometry.ts', 'metrics.ts', 'store.ts', 'README.md', 'motion-subset.ts', 'LICENSE']) {
     assert.ok(existsSync(resolve(ROOT, REF, f)), `missing ${REF}/${f}`);

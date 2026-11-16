@@ -359,7 +359,8 @@
     const sync = () => {
       const snap = snapshot();
       document.body.dataset.focusTimer = snap.phase === 'none' ? '' : snap.phase;
-      button.setAttribute('aria-pressed', String(snap.phase === 'running'));
+      // 三态循环里 paused 仍是一次活着的会话（再点就继续），所以也算按下。
+      button.setAttribute('aria-pressed', String(snap.phase === 'running' || snap.phase === 'paused'));
     };
     button.addEventListener('click', () => {
       const snap = snapshot();
