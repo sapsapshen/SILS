@@ -29,18 +29,27 @@
 }
 body[data-view="reader"] #islandRoot { display: block; }
 
+/* 容器的左缘就是屏幕中线（宽度 0）：JS 每帧写的 left 是相对中线的偏移，与
+   path 的坐标同一个原点。若容器按 402px 宽居中，盒就会整体左移 201px，
+   点得到的地方画在别处。 */
 .island {
   position: absolute;
   top: 0;
   left: 50%;
-  width: 402px;               /* 上游：宽屏不拉伸，岛恒按手机尺寸画 */
+  width: 0;
   height: 300px;
-  margin-left: -201px;        /* viewBox 的原点落在屏幕中线 */
   pointer-events: none;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-.island-shape { position: absolute; inset: 0; width: 402px; height: 300px; overflow: visible; }
+.island-shape {
+  position: absolute;
+  left: -201px;
+  top: 0;
+  width: 402px;
+  height: 300px;
+  overflow: visible;
+}
 .island-fill { fill: #000; }
 .island-keyline { fill: none; stroke: #fff; stroke-width: 1.5; opacity: 0; }
 .island-keyline[stroke-opacity] { opacity: 1; }

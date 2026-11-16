@@ -610,9 +610,10 @@ check('currentGeometry 给出可直接画 path 的盒尺寸', () => {
    headless。offsetWidth 可写，供槽位实测的测试设置宽度。 */
 function makeElement(tag) {
   const classes = new Set();
+  let ownText = '';
   const el = {
     tag, children: [], attrs: {}, dataset: {}, style: {}, listeners: {},
-    textContent: '', hidden: false, offsetWidth: 0, offsetHeight: 0,
+    hidden: false, offsetWidth: 0, offsetHeight: 0,
     classList: {
       add: (...names) => names.forEach(n => classes.add(n)),
       remove: (...names) => names.forEach(n => classes.delete(n)),
@@ -626,6 +627,17 @@ function makeElement(tag) {
   });
   el.append = (...kids) => kids.forEach(kid => el.children.push(kid));
   el.appendChild = kid => { el.children.push(kid); return kid; };
+  // 真实 DOM 的 children 是只读实时集合，赋 length 在严格模式下抛 TypeError；
+  // 桩必须同样只给 replaceChildren，逼实现走对的那条路。
+  el.replaceChildren = (...kids) => { el.children.length = 0; kids.forEach(kid => el.children.push(kid)); };
+  Object.defineProperty(el, 'firstChild', { get: () => el.children[0] || null });
+  // textContent 在真 DOM 里是整棵子树的拼接；桩只存自己的字符串的话，
+  // "容器有没有把文字渲染出来"这类断言会假绿/假红。
+  Object.defineProperty(el, 'textContent', {
+    get: () => (el.children.length ? el.children.map(kid => kid.textContent).join('') : ownText),
+    set: value => { ownText = String(value); },
+    enumerable: true
+  });
   el.setAttribute = (k, v) => {
     el.attrs[k] = String(v);
     if (k === 'class') el.className = v;
@@ -648,8 +660,13 @@ function findAll(el, selector, out = []) {
 function matches(el, selector) {
   if (selector.startsWith('.')) return el.classList.contains(selector.slice(1));
   if (selector.startsWith('[')) {
-    const name = selector.slice(1, -1).split('=')[0];
-    return el.attrs[name] !== undefined;
+    // 支持 [attr] 与 [attr=value]：只认属性名的话，四个 data-slot 会互相冒充。
+    const body = selector.slice(1, -1);
+    const eq = body.indexOf('=');
+    if (eq < 0) return el.attrs[body] !== undefined;
+    const name = body.slice(0, eq);
+    const value = body.slice(eq + 1).replace(/^"|"$/g, '');
+    return el.attrs[name] === value;
   }
   return el.tag === selector;
 }
@@ -693,6 +710,9 @@ check('mount 出可聚焦胶囊 + SVG 形状 + 内容层', () => {
   assert.equal(Island.enabled, true, '有真 DOM 就必须启用');
   assert.ok(findDeep(root, 'svg'), '没有 svg 形状层');
   assert.ok(findDeep(root, '.island-fill'), '没有填充 path');
+  // viewBox 的原点必须在屏幕中线：路径坐标是相对中线的偏移，写错就画到别处去，
+  // 而命中区仍然在正确的地方——于是"点得到却看不见"。浏览器里才看得出来。
+  assert.equal(findDeep(root, '.island-shape').attrs.viewBox, '-201 0 402 300');
   const pill = findDeep(root, 'button');
   assert.ok(pill, '胶囊必须是可聚焦的 button');
   assert.equal(pill.attrs.type, 'button', '别把表单默认行为带进来');
@@ -771,6 +791,19 @@ check('帧循环把弹簧写进 d 与命中盒，而不是任何布局属性', (
   const hit = parseFloat(pill.style.width);
   assert.ok(Math.abs(drawn - hit) < 0.5, `画出来 ${drawn}px 而可点 ${hit}px`);
   assert.ok(Math.abs(hit - 150.9) < 1.2, `静止胶囊宽应约 151px，实测 ${hit}`);
+  // 盒的原点必须与 path 的原点同为屏幕中线：CSS 若把容器改成 402px 宽居中，
+  // 盒会整体左移 201px，于是"点得到的地方画在别处"。
+  const geometry = Island.internals.currentGeometry();
+  assert.equal(pill.style.left, `${geometry.left.toFixed(2)}px`);
+  assert.equal(pill.style.top, `${geometry.top.toFixed(2)}px`);
+  // 槽里必须真的放了东西：浏览器里 children.length 赋值静默失败过一次，
+  // 结果胶囊画出来了却一片空黑。
+  const slots = [...pill.children];
+  assert.equal(slots.length, 2, '胶囊应有左右两个槽');
+  assert.equal(slots[0].children.length, 1, '左槽是空的');
+  assert.equal(slots[1].children.length, 1, '右槽是空的');
+  assert.match(slots[1].children[0].attrs.class, /island-text/);
+  assert.equal(slots[1].children[0].textContent, '43%');
 });
 
 check('形状随帧变化：从 idle 长到紧凑的过程中 d 一直在改', () => {
@@ -1144,6 +1177,91 @@ check('语言切换重发两条活动的文案', () => {
   assert.ok(rig.calls.length > before, '切语言后必须把文案重新送进岛里');
   const focusUpdate = rig.calls.slice(before).filter(c => c[1] === 'focus-timer');
   assert.ok(focusUpdate.length >= 1, '倒计时活动的文案没重发');
+});
+
+check('集成：专注活动经真渲染器显示 mm:ss，并随墙钟走', () => {
+  // 这条测试存在的全部理由：focus.js 与 island.js 对内容原子形状的约定曾经
+  // 不一致（{time:{until}} 对 {until}），两边的单元测试各自都绿，只有把它们
+  // 放进同一个沙箱才看得见 NaN。
+  let ms = 1763300000000;
+  class FakeDate extends Date {
+    constructor(...args) { if (args.length) super(...args); else super(ms); }
+    static now() { return ms; }
+  }
+  const dom = makeDocument();
+  const root = makeElement('div');
+  dom.getElementById = id => (id === 'islandRoot' ? root : null);
+  const sandbox = {
+    window: { addEventListener() {} },
+    console,
+    document: dom,
+    Date: FakeDate,
+    getComputedStyle: () => ({ getPropertyValue: () => ' #ffffff ' }),
+    matchMedia: () => ({ matches: false, addEventListener() {} })
+  };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(read('assets/island.js'), sandbox, { filename: 'assets/island.js' });
+  vm.runInContext(read('assets/focus.js'), sandbox, { filename: 'assets/focus.js' });
+  const Island = sandbox.window.Island;
+  const F = sandbox.window.FocusTimer;
+  assert.equal(Island.enabled, true, 'focus.js 的 boot 没把岛挂上');
+  F.start(25 * MINUTE);
+  Island.internals.tick(ms / 1000);
+  const pill = root.querySelector('.island-pill');
+  const shown = () => pill.children[1].children[0].textContent;
+  assert.match(shown(), /^\d+:\d{2}$/, `倒计时应显示 mm:ss，实际 ${JSON.stringify(shown())}`);
+  assert.equal(shown(), "25:00");
+  ms += 61_000;
+  Island.internals.tick(ms / 1000);
+  assert.equal(shown(), "23:59", '墙钟走 61 秒后必须剩 23:59');
+  ms += 59_000;
+  Island.internals.tick(ms / 1000);
+  assert.equal(shown(), '23:00');
+  // 暂停后不再走字
+  F.pause();
+  Island.internals.tick(ms / 1000);
+  assert.equal(pill.children[1].children[0].textContent, 'island.paused', '暂停应显示状态而不是时间');
+
+  // 展开面：底部必须是"大号剩余时间 + 按钮行"两串内容，而不是只有按钮。
+  F.resume();
+  Island.expand('focus-timer');
+  Island.internals.tick(ms / 1000);
+  const bottom = root.querySelector('.island-expanded').querySelector('[data-slot="bottom"]');
+  assert.equal(bottom.children.length, 2, `展开面底部应有两串内容，实际 ${bottom.children.length}`);
+  assert.match(bottom.children[0].attrs.class, /island-value/, '剩余时间没有用大号数字');
+  assert.match(bottom.children[0].textContent, /^\d+:\d{2}$/);
+  assert.equal(bottom.children[1].querySelectorAll('.island-btn').length, 3, '应有暂停/加5分/结束三个按钮');
+  const trailing = root.querySelector('.island-expanded').querySelector('[data-slot="trailing"]');
+  assert.match(trailing.textContent, /island\.today/, '今日累计该在顶行右侧');
+  ms += 60_000;
+  Island.internals.tick(ms / 1000);
+  // 已经走过 120s（暂停前）+ 60s（继续后）= 180s，剩 22:00。
+  assert.equal(bottom.children[0].textContent, '22:00', '展开面的大数字也要跟着墙钟走');
+
+  // 完成那一次：整片展开面必须重写。曾经只给了 leading/center，底部留着
+  // 上一秒的倒计时原子，读者看到的是 0:00 而不是本次时长。
+  ms += 22 * MINUTE + 1;
+  Island.internals.tick(ms / 1000);
+  // alert 的第一拍用的是旧内容，新内容 0.12s 后才换上——所以这里必须再走一帧。
+  ms += 200;
+  Island.internals.tick(ms / 1000);
+  const doneBottom = root.querySelector('.island-expanded').querySelector('[data-slot="bottom"]');
+  assert.equal(doneBottom.children.length, 1, `完成面底部只该有时长，实际 ${doneBottom.children.map(c => `${c.attrs.class}="${c.textContent}"`).join(' | ')}`);
+  assert.equal(doneBottom.children[0].textContent, '25:00', `完成面底部该是本次时长，实际 ${doneBottom.children[0].textContent}`);
+  assert.match(doneBottom.children[0].attrs.class, /island-value/);
+  const doneTrailing = root.querySelector('.island-expanded').querySelector('[data-slot="trailing"]');
+  assert.match(doneTrailing.textContent, /island\.today/, '完成面右侧该是今日累计');
+  assert.equal(F.snapshot().todayMs, 25 * MINUTE, '累计当场落账');
+  // alert 收起后回到紧凑：这时胶囊右侧该是本次时长，而不是还在走的倒计时。
+  ms += 6_000;
+  Island.internals.tick(ms / 1000);
+  assert.equal(Island.presentation, 'compact', 'alert 收起后应回到紧凑');
+  assert.equal(root.querySelector('.island-pill').children[1].children[0].textContent, '25:00', '胶囊右侧该换成时长');
+  // 再一拍：活动结束，岛只剩进度那条
+  ms += 2_000;
+  Island.internals.tick(ms / 1000);
+  assert.equal(F.snapshot().phase, 'none');
 });
 
 check('参考源与上游许可随仓库发布', () => {

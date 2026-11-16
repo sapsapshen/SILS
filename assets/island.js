@@ -515,12 +515,14 @@
   // ---- 活动栈：store.ts ----
   const state = { activities: [], expanded: null, front: {}, handoff: null, nextOrder: 1 };
   let clockNow = () => (typeof performance === 'undefined' ? Date.now() / 1000 : performance.now() / 1000);
+  // 倒计时看的是墙钟，不是 rAF 的相对秒：两者混用会让 {until} 对不上任何时钟。
+  let wallNow = () => Date.now();
   let render = () => {};
   const timers = [];                                  // {at, fn}，Task 7 的 alert 与长按用
   const frameSubscribers = [];                        // 每帧回调（见 onFrame）
   const bySort = (a, b) => b.priority - a.priority || a.order - b.order;
   const find = id => state.activities.find(a => a.id === id);
-  const commit = () => { syncShape(); render(); };
+  const commit = () => { contentDirty = true; syncShape(); render(); };
 
   // 一侧为空时用另一侧，都没有时用 compact：上游 minimal 的兜底顺序。
   const minimalOf = content => (content && content.minimal) || (content && content.compact) || null;
@@ -799,6 +801,9 @@
 
   const node = {};                                  // 结构缓存
   let contentKey = '';
+  // 栈里任何一次改动都要重画内容：只按 contentKey 判断会漏掉"同一条活动换了
+  // 数字"这种就地更新（43% -> 47%、计时 -> 已暂停），集成测试就是这么抓到的。
+  let contentDirty = true;
   let frameQueued = false;
   let timeAtom = null;
 
@@ -812,7 +817,12 @@
     // 容器本身不带语义：胶囊是唯一的具名控件，形状与传感器对读屏隐藏。
     const island = el('div', 'island');
     node.region = island;
-    node.shape = svgEl('svg', 'island-shape', { 'aria-hidden': 'true' });
+    // viewBox 的原点就在屏幕中线：路径用的 left/right 是相对中线的偏移，
+    // 少了这个属性，形状会画到盒子左上角去，内容也就跟黑色对不上。
+    node.shape = svgEl('svg', 'island-shape', {
+      'aria-hidden': 'true',
+      viewBox: `${-METRICS.screen.width / 2} 0 ${METRICS.screen.width} 300`
+    });
     node.shape.appendChild(svgEl('title')).textContent = '灵动岛';
     node.fill = svgEl('path', 'island-fill');
     node.keyline = svgEl('path', 'island-keyline');
@@ -868,7 +878,9 @@
     if (spec.bar !== undefined) return bar(spec.bar);
     if (spec.buttons) return buttonRow(spec.buttons);
     if (spec.label !== undefined) { const n = el('span', 'island-label'); n.textContent = spec.label; return n; }
-    if (spec.time !== undefined) return timeAtomFor(spec);
+    // 自走倒计时：{until: 毫秒时刻, format}。它自己读墙钟，调用方不必每帧 update。
+    if (spec.until !== undefined) return timeAtomFor(spec);
+    if (spec.time !== undefined) { const n = el('span', 'island-time'); n.textContent = formatMs(spec.time, spec.format || 'mm:ss'); return n; }
     if (spec.value !== undefined) { const n = el('span', 'island-value'); n.textContent = String(spec.value); return n; }
     if (spec.subtitle !== undefined) { const n = el('span', 'island-subtitle'); n.textContent = String(spec.subtitle); return n; }
     if (spec.title !== undefined) { const n = el('span', 'island-title'); n.textContent = String(spec.title); return n; }
@@ -914,9 +926,10 @@
     return hours > 0 ? `${hours} 小时 ${minutes % 60} 分` : `${minutes} 分 ${String(seconds).padStart(2, '0')} 秒`;
   };
   const timeAtomFor = spec => {
-    const n = el('span', 'island-time');
-    n.textContent = formatMs(spec.until ? Math.max(0, spec.until - Date.now()) : (spec.time || 0), spec.format || 'mm:ss');
-    timeAtom = { node: n, spec };
+    const n = el('span', spec.big ? 'island-time island-value' : 'island-time');
+    const text = formatMs(Math.max(0, spec.until - wallNow()), spec.format || 'mm:ss');
+    n.textContent = text;
+    timeAtom = { node: n, spec, text };
     return n;
   };
 
@@ -957,9 +970,11 @@
 
   const fillSlot = (slot, spec) => {
     if (!slot) return;
-    const child = atom(spec);
-    slot.children.length = 0;
-    if (child) slot.appendChild(child);
+    // 一个区域可以放一串内容（展开面的底部就是"大数字 + 按钮行"），按顺序排。
+    const children = (Array.isArray(spec) ? spec : [spec]).map(atom).filter(Boolean);
+    // children 是只读的实时集合，赋 length 在严格模式下直接抛；换掉内容用
+    // replaceChildren，一次调用不留中间帧。
+    slot.replaceChildren(...children);
   };
 
   const outlineOf = geometry => {
@@ -993,15 +1008,20 @@
     node.bubble.hidden = geometry.bubbleHeight <= 0.5;
     node.expanded.hidden = !expanded;
     node.sensor.style.opacity = String(METRICS.sensor.opacity * (expanded ? 0 : 1));
-    // 内容只在 contentKey 变化时重画：每帧重建 DOM 会在正文里造成无谓的布局。
-    if (scene.contentKey !== contentKey) {
+    // 内容只在栈改动或换脸时重画：每帧重建 DOM 会在正文里造成无谓的布局。
+    if (contentDirty || scene.contentKey !== contentKey) {
+      contentDirty = false;
       contentKey = scene.contentKey;
       timeAtom = null;
       paintSlots(scene);
       if (alerting.size) node.live.textContent = scene.label;
     } else if (timeAtom) {
-      const spec = timeAtom.spec;
-      timeAtom.node.textContent = formatMs(spec.until ? Math.max(0, spec.until - clockNow() * 1000) : (spec.time || 0), spec.format);
+      // 只在显示的那一秒真的变了才写：每帧写 textContent 会白白让胶囊重排 60 次/秒。
+      const text = formatMs(Math.max(0, timeAtom.spec.until - wallNow()), timeAtom.spec.format || 'mm:ss');
+      if (text !== timeAtom.text) {
+        timeAtom.text = text;
+        timeAtom.node.textContent = text;
+      }
     }
   };
 
@@ -1057,6 +1077,7 @@
     mount(root, options) {
       const o = options || {};
       if (o.clock) clockNow = o.clock;
+      if (o.wall) wallNow = o.wall;
       // 判据用能力而不是 typeof document：Task 6/7/10/11 的单测传裸对象，走
       // headless —— 状态机照常跑，只是不建 DOM、不起帧循环。
       headless = !root || typeof root.appendChild !== 'function';

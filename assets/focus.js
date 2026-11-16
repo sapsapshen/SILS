@@ -110,13 +110,18 @@
       label: phase === 'paused' ? t('island.paused') : t('island.focusLabel', { time: formatMs(left) }),
       compact: {
         leading: { glyph: 'lotus' },
-        trailing: phase === 'paused' ? { text: t('island.paused') } : { time: { until: now() + left, format: 'mm:ss' } }
+        trailing: phase === 'paused' ? { text: t('island.paused') } : { until: now() + left, format: 'mm:ss' }
       },
       minimal: { leading: { glyph: 'lotus' } },
       expanded: {
         leading: { label: t('island.focus') },
-        center: { title: t('island.focus'), subtitle: t('island.today', { time: formatMs(todayMs) }) },
-        bottom: { buttons: buttons() }
+        // 顶行右侧放今日累计：它比标题更需要一眼看到，标题本身已在 leading 标签里。
+        trailing: { text: t('island.today', { time: formatMs(todayMs) }) },
+        bottom: [
+          // 大数字就是剩余时间本身：它自走，不需要每秒 update 一次活动。
+          { until: now() + left, format: 'mm:ss', big: true },
+          { buttons: buttons() }
+        ]
       }
     }, extra || {});
   }
@@ -196,20 +201,29 @@
     rollover();
     if (phase === 'running' && remaining() <= 0) {
       const spent = targetMs;
-      const label = t('island.doneBody', { time: formatMs(spent), today: formatMs(todayMs + spent) });
       const alerting = handle;
       accumulatedMs = targetMs;
       phase = 'complete';
       completionAt = now();
-      record(spent);
       startedAt = 0;
       accumulatedMs = 0;
-      if (alerting) alerting.update({
-        alert: true,
-        label,
-        compact: { trailing: { text: formatMs(spent) } },
-        expanded: { leading: { label: t('island.doneTitle') }, center: { title: t('island.doneTitle'), subtitle: label } }
-      });
+      record(spent);                    // 先落账：汇报里的今日累计必须是落账之后的数
+      const label = t('island.doneBody', { time: formatMs(spent), today: formatMs(todayMs) });
+      if (alerting) {
+        // 整片 expanded 都要重写：merge 是按键合并的，只给 leading/center 会把
+        // 上一秒的倒计时原子留在底部，读者看到的就是 0:00。
+        alerting.update({
+          alert: true,
+          label,
+          compact: { trailing: { text: formatMs(spent) } },
+          expanded: {
+            leading: { label: t('island.doneTitle') },
+            trailing: { text: t('island.today', { time: formatMs(todayMs) }) },
+            center: { subtitle: label },
+            bottom: [{ value: formatMs(spent) }]
+          }
+        });
+      }
       persist();
       return;
     }
