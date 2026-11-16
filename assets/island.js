@@ -194,7 +194,173 @@
     }
   }
 
-  // ---- keyline：metrics.ts 的 keylineFade，两点之间按对数插值 ----
+  // ---- path.ts：连续圆角与黏颈的 SVG 路径构造 ----
+  // 上游的圆角是"连续"的：中间一段半径 r 的圆弧，两侧各一条三次曲线把曲率从
+  // 直边缓进圆弧，所以角不是切点而是渐变。smoothing 决定把手吃掉弧的多少角度
+  // （0.72 是对着模拟器逐帧拟出来的）；装不下时只吃这条边允许的那部分，
+  // 于是胶囊的短端保持圆头、长肩保持柔和——这是形状在中间态不发方的原因。
+  const fmt = n => (Math.round(n * 1000) / 1000).toString();
+
+  const edgeEase = (r, smoothing, room) => {
+    const s = Math.max(0, Math.min(smoothing, room / r - 1));
+    const angle = (Math.PI / 4) * s;
+    const p = (1 + s) * r;
+    const along = r * (1 - Math.sin(angle));
+    const across = r * (1 - Math.cos(angle));
+    const c = r * Math.tan(angle / 2) * Math.cos(angle);
+    const b = Math.max(0, (p - c - along) / 3);
+    return { p, a: 2 * b, b, along, across };
+  };
+
+  const continuousRectPath = (x, y, width, height, radius, smoothing, leading = radius) => {
+    const w = Math.max(0, width);
+    const h = Math.max(0, height);
+    if (w === 0 || h === 0) return '';
+    const r = Math.max(0, Math.min(radius, w / 2, h / 2));
+    const rl = Math.max(0, Math.min(leading, w / 2, h / 2));
+    if (r < 1e-3 && rl < 1e-3) return `M ${fmt(x)} ${fmt(y)} H ${fmt(x + w)} V ${fmt(y + h)} H ${fmt(x)} Z`;
+    const across = edgeEase(r, smoothing, w / 2);
+    const down = edgeEase(r, smoothing, h / 2);
+    const acrossL = rl === r ? across : edgeEase(rl, smoothing, w / 2);
+    const downL = rl === r ? down : edgeEase(rl, smoothing, h / 2);
+    const pt = (k, u, du, v, dv) => `${fmt(k.x + u.x * du + v.x * dv)} ${fmt(k.y + u.y * du + v.y * dv)}`;
+    // u 沿"到达的那条边"回指，v 沿"离开的那条边"前指。
+    const corner = (k, u, v, inc, out, rc) =>
+      `L ${pt(k, u, inc.p, v, 0)} ` +
+      `C ${pt(k, u, inc.p - inc.a, v, 0)} ${pt(k, u, inc.p - inc.a - inc.b, v, 0)} ${pt(k, u, inc.along, v, inc.across)} ` +
+      `A ${fmt(rc)} ${fmt(rc)} 0 0 1 ${pt(k, v, out.along, u, out.across)} ` +
+      `C ${pt(k, v, out.p - out.a - out.b, u, 0)} ${pt(k, v, out.p - out.a, u, 0)} ${pt(k, v, out.p, u, 0)} `;
+    const right = x + w;
+    const bottom = y + h;
+    return (
+      `M ${fmt(x + acrossL.p)} ${fmt(y)} ` +
+      corner({ x: right, y }, { x: -1, y: 0 }, { x: 0, y: 1 }, across, down, r) +
+      corner({ x: right, y: bottom }, { x: 0, y: -1 }, { x: -1, y: 0 }, down, across, r) +
+      corner({ x, y: bottom }, { x: 1, y: 0 }, { x: 0, y: -1 }, acrossL, downL, rl) +
+      corner({ x, y }, { x: 0, y: 1 }, { x: 1, y: 0 }, downL, acrossL, rl) +
+      'Z'
+    );
+  };
+
+  // 非圆弧的角按折线画：岛这个尺寸上 24 段离真曲线不到百分之一.pt。
+  const SEGMENTS = 24;
+  const cornerPath = (cx, cy, c, from) => {
+    if (c.rx <= 0 || c.ry <= 0) return '';
+    if (Math.abs(c.exponent - 2) < 1e-3) {
+      const end = from + Math.PI / 2;
+      return `A ${fmt(c.rx)} ${fmt(c.ry)} 0 0 1 ${fmt(cx + c.rx * Math.cos(end))} ${fmt(cy + c.ry * Math.sin(end))} `;
+    }
+    const power = 2 / c.exponent;
+    let out = '';
+    for (let i = 1; i <= SEGMENTS; i += 1) {
+      const angle = from + (Math.PI / 2) * (i / SEGMENTS);
+      const cos = Math.cos(angle), sin = Math.sin(angle);
+      out += `L ${fmt(cx + c.rx * Math.sign(cos) * Math.abs(cos) ** power)} ` +
+             `${fmt(cy + c.ry * Math.sign(sin) * Math.abs(sin) ** power)} `;
+    }
+    return out;
+  };
+
+  const roundedRectPath = (x, y, width, height, corner, leading = corner) => {
+    if ((corner.smoothing || 0) > 0) {
+      return continuousRectPath(x, y, width, height, corner.rx, corner.smoothing || 0, leading.rx);
+    }
+    const w = Math.max(0, width);
+    const h = Math.max(0, height);
+    if (w === 0 || h === 0) return '';
+    const clampTo = k => ({
+      rx: Math.max(0, Math.min(k.rx, w / 2)),
+      ry: Math.max(0, Math.min(k.ry, h / 2)),
+      exponent: k.exponent
+    });
+    const c = clampTo(corner);
+    const l = leading === corner ? c : clampTo(leading);
+    const r = x + w;
+    const b = y + h;
+    return (
+      `M ${fmt(x + l.rx)} ${fmt(y)} ` +
+      `L ${fmt(r - c.rx)} ${fmt(y)} ` + cornerPath(r - c.rx, y + c.ry, c, -Math.PI / 2) +
+      `L ${fmt(r)} ${fmt(b - c.ry)} ` + cornerPath(r - c.rx, b - c.ry, c, 0) +
+      `L ${fmt(x + l.rx)} ${fmt(b)} ` + cornerPath(x + l.rx, b - l.ry, l, Math.PI / 2) +
+      `L ${fmt(x)} ${fmt(y + l.ry)} ` + cornerPath(x + l.rx, y + l.ry, l, Math.PI) +
+      'Z'
+    );
+  };
+
+  const capsulePath = (x, y, width, height, smoothing = 0) => {
+    const r = Math.min(width, height) / 2;
+    return roundedRectPath(x, y, width, height, { rx: r, ry: r, exponent: 2, smoothing });
+  };
+
+  const polar = (c, angle, length) => ({ x: c.x + length * Math.cos(angle), y: c.y + length * Math.sin(angle) });
+
+  // 两圆之间的黏颈（metaball bridge）：一条闭合路径，与两圆同色填充后读作一个
+  // 液态形状。间隙到 maxGap 时颈细到消失，所以分裂断开时不会"啪"地弹出。
+  const bridgePath = (a, b, options) => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const d = Math.hypot(dx, dy);
+    if (a.r <= 0 || b.r <= 0 || d <= Math.abs(a.r - b.r)) return '';
+    const gap = d - a.r - b.r;
+    if (gap >= options.maxGap) return '';
+    const reach = Math.max(0, gap) / options.maxGap;
+    const v = options.spread * (1 - reach) ** (options.power || 1.5);
+    if (v <= 1e-4) return '';
+    let u1 = 0;
+    let u2 = 0;
+    if (d < a.r + b.r) {
+      u1 = Math.acos(Math.min(1, Math.max(-1, (a.r * a.r + d * d - b.r * b.r) / (2 * a.r * d))));
+      u2 = Math.acos(Math.min(1, Math.max(-1, (b.r * b.r + d * d - a.r * a.r) / (2 * b.r * d))));
+    }
+    const between = Math.atan2(dy, dx);
+    const maxSpread = Math.acos(Math.min(1, Math.max(-1, (a.r - b.r) / d)));
+    const angle1 = between + u1 + (maxSpread - u1) * v;
+    const angle2 = between - u1 - (maxSpread - u1) * v;
+    const angle3 = between + Math.PI - u2 - (Math.PI - u2 - maxSpread) * v;
+    const angle4 = between - Math.PI + u2 + (Math.PI - u2 - maxSpread) * v;
+    const p1 = polar(a, angle1, a.r);
+    const p2 = polar(a, angle2, a.r);
+    const p3 = polar(b, angle3, b.r);
+    const p4 = polar(b, angle4, b.r);
+    const total = a.r + b.r;
+    const handle = Math.min(v * options.handleSize, Math.hypot(p1.x - p3.x, p1.y - p3.y) / total) * Math.min(1, (d * 2) / total);
+    const h1 = polar(p1, angle1 - Math.PI / 2, a.r * handle);
+    const h2 = polar(p2, angle2 + Math.PI / 2, a.r * handle);
+    const h3 = polar(p3, angle3 + Math.PI / 2, b.r * handle);
+    const h4 = polar(p4, angle4 - Math.PI / 2, b.r * handle);
+    const point = k => `${fmt(k.x)} ${fmt(k.y)}`;
+    return `M ${point(p1)} C ${point(h1)} ${point(h3)} ${point(p3)} L ${point(p4)} C ${point(h4)} ${point(h2)} ${point(p2)} Z`;
+  };
+
+  // 颈刚断开时留在两端的短尖：两侧从圆上离开后又贴回圆，所以是凹而窄的。
+  const cuspPath = (c, toward, length, base = 0.5) => {
+    const d = Math.hypot(toward.x - c.x, toward.y - c.y);
+    if (c.r <= 0 || d < 1e-6 || length < 0.01) return '';
+    const aim = Math.atan2(toward.y - c.y, toward.x - c.x);
+    const tip = polar(c, aim, c.r + length);
+    const point = k => `${fmt(k.x)} ${fmt(k.y)}`;
+    return (
+      `M ${point(polar(c, aim + base, c.r))} Q ${point(polar(c, aim + base * 0.25, c.r))} ${point(tip)} ` +
+      `Q ${point(polar(c, aim - base * 0.25, c.r))} ${point(polar(c, aim - base, c.r))} L ${point(c)} Z`
+    );
+  };
+
+  // 内容遮罩用的 45 度切角矩形：模拟器就是这样裁展开内容的（52pt 方块与底部
+  // 进度条的外角沿 x + y = r 被切掉）。
+  const chamferPath = (x, y, width, height, leg) => {
+    const w = Math.max(0, width);
+    const h = Math.max(0, height);
+    if (w === 0 || h === 0) return '';
+    const c = Math.max(0, Math.min(leg, w / 2, h / 2));
+    const r = x + w;
+    const b = y + h;
+    return (
+      `M ${fmt(x + c)} ${fmt(y)} L ${fmt(r - c)} ${fmt(y)} L ${fmt(r)} ${fmt(y + c)} L ${fmt(r)} ${fmt(b - c)} ` +
+      `L ${fmt(r - c)} ${fmt(b)} L ${fmt(x + c)} ${fmt(b)} L ${fmt(x)} ${fmt(b - c)} L ${fmt(x)} ${fmt(y + c)} Z`
+    );
+  };
+
+  // ---- keyline：metrics.ts 的 keylineFade ----
   // 上游试过一条指数线，过不了两个实测点，所以按段插值而不是外推。
   const luma = hex => {
     const value = parseInt(String(hex).replace('#', ''), 16);
@@ -236,7 +402,11 @@
     expand: noop,
     collapse: noop,
     press: noop,
-    internals: { METRICS, MOTION, REDUCED_SPRING, luma, keylineAlpha, solveSpring, AnimatedValue, setClock: fn => { clock = fn; } }
+    internals: {
+      METRICS, MOTION, REDUCED_SPRING, luma, keylineAlpha, solveSpring, AnimatedValue,
+      fmt, edgeEase, continuousRectPath, roundedRectPath, capsulePath, bridgePath, cuspPath, chamferPath,
+      setClock: fn => { clock = fn; }
+    }
   };
   Island.internals.setReducedMotion = value => { reducedMotion = !!value; };
   Island.internals.isReduced = () => reducedMotion;
