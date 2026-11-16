@@ -523,6 +523,12 @@
   let render = () => {};
   const timers = [];                                  // {at, fn}，Task 7 的 alert 与长按用
   const frameSubscribers = [];                        // 每帧回调（见 onFrame）
+  const errorSubscribers = [];                        // 帧内异常（island-watch 订阅）
+  const reportError = (error, where) => {
+    for (const fn of errorSubscribers) {
+      try { fn(error, where); } catch { /* 守望自己出错不能反过来打断帧 */ }
+    }
+  };
   const bySort = (a, b) => b.priority - a.priority || a.order - b.order;
   const find = id => state.activities.find(a => a.id === id);
   const commit = () => { contentDirty = true; syncShape(); render(); };
@@ -658,6 +664,9 @@
     const [gone] = state.activities.splice(index, 1);
     if (state.expanded && state.expanded.id === id) state.expanded = null;
     if (gone.group !== null && state.front[gone.group] === id) delete state.front[gone.group];
+    // 提醒被提前结束（比如「知道了」）时，回落定时器会被下面一并删掉，
+    // 那句 alerting.delete 就永远轮不到——标记必须在这里撤掉。
+    alerting.delete(id);
     for (let i = timers.length - 1; i >= 0; i -= 1) if (timers[i].id === id) timers.splice(i, 1);
     commit();
   }
@@ -826,7 +835,8 @@
   const GLYPHS = {
     bookmark: 'M7 3.5h10c.6 0 1 .4 1 1V20l-6-3.2-6 3.2V4.5c0-.6.4-1 1-1Z',
     lotus: 'M12 20.5C7.9 18.6 5 15.1 5 11.3c0-1.9.8-3.7 2.3-5.3.9 2.3 2.5 4.1 4.7 5.4 2.2-1.3 3.8-3.1 4.7-5.4 1.5 1.6 2.3 3.4 2.3 5.3 0 3.8-2.9 7.3-7 9.2Z' +
-      'M12 5.5c1.6 2.1 2.2 4.2 1.8 6.4-.6.4-1.2.7-1.8.9-.6-.2-1.2-.5-1.8-.9-.4-2.2.2-4.3 1.8-6.4Z'
+      'M12 5.5c1.6 2.1 2.2 4.2 1.8 6.4-.6.4-1.2.7-1.8.9-.6-.2-1.2-.5-1.8-.9-.4-2.2.2-4.3 1.8-6.4Z',
+    alert: 'M12 4.2 2.9 20.2h18.2L12 4.2ZM12 9.8v4.4M12 17.4v.1'
   };
   const CHAR_MS = 6.6;                              // 15px 等宽数字的字宽估算（headless）
 
@@ -844,6 +854,7 @@
   };
 
   const node = {};                                  // 结构缓存
+  let frostClip = false;                            // 浏览器认不认 clip-path: path()
   let contentKey = '';
   // 栈里任何一次改动都要重画内容：只按 contentKey 判断会漏掉"同一条活动换了
   // 数字"这种就地更新（43% -> 47%、计时 -> 已暂停），集成测试就是这么抓到的。
@@ -857,7 +868,7 @@
     return wrap;
   };
 
-  function buildDom(root, backdrop) {
+  function buildDom(root) {
     // 容器本身不带语义：胶囊是唯一的具名控件，形状与传感器对读屏隐藏。
     const island = el('div', 'island');
     node.region = island;
@@ -868,10 +879,17 @@
       viewBox: `${-METRICS.screen.width / 2} 0 ${METRICS.screen.width} 300`
     });
     node.shape.appendChild(svgEl('title')).textContent = '灵动岛';
+    // 磨砂底：backdrop-filter 只能作用在 HTML 盒上，所以它是一块与形状同大、
+    // 同原点的 div，clip-path 每帧由 paint() 写成同一条路径（局部坐标）。
+    // 裁形与滤镜必须分两层：Chrome 把两者放在同一个元素上时，滤镜会被吃掉
+    // （实测同一元素无 blur、外层裁内层 blur 正常）。
+    node.frost = el('div', 'island-frost', { 'aria-hidden': 'true' });
+    node.frostLayer = el('div', 'island-frost-layer');
+    node.frost.appendChild(node.frostLayer);
+    frostClip = typeof CSS !== 'undefined' && !!CSS.supports && CSS.supports('clip-path', 'path("M0 0")');
+    if (!frostClip) node.frost.style.display = 'none';
     node.fill = svgEl('path', 'island-fill');
     node.keyline = svgEl('path', 'island-keyline');
-    const alpha = keylineAlpha(backdrop || '#ffffff');
-    if (alpha > 0) node.keyline.setAttribute('stroke-opacity', String(alpha));
     node.shape.append(node.fill, node.keyline);
     node.sensor = el('div', 'island-sensor', { 'aria-hidden': 'true' });
     node.pill = el('button', 'island-pill', { type: 'button', 'aria-expanded': 'false' });
@@ -887,7 +905,7 @@
     node.expandedBottom = el('div', 'island-region', { 'data-slot': 'bottom' });
     node.expanded.append(row, node.expandedBottom);
     node.live = el('p', 'island-live', { role: 'status', 'aria-live': 'polite' });
-    island.append(node.shape, node.sensor, node.pill, node.bubble, node.expanded, node.live);
+    island.append(node.frost, node.shape, node.sensor, node.pill, node.bubble, node.expanded, node.live);
     root.appendChild(island);
 
     node.pill.addEventListener('pointerdown', () => press('hold'));
@@ -896,13 +914,117 @@
       if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); expand(); }
       else if (event.key === 'Escape') collapse();
     });
+    // 拖动挂在整岛：胶囊、副胶囊、展开面里按下都算，事件从子节点冒上来。
+    node.region.addEventListener('pointerdown', dragDown);
+    node.region.addEventListener('click', event => {
+      // 拖完松手的那一下 click 是拖拽的尾巴，不是按钮命令。
+      if (clockNow() - dragEndedAt < 0.12) { event.stopPropagation(); event.preventDefault(); }
+    }, true);
+    loadDrag();
     if (typeof document !== 'undefined') {
       document.addEventListener('keydown', event => { if (event.key === 'Escape') keyEscape(); });
       document.addEventListener('pointerdown', event => {
         if (event.target && node.region && node.region.children && !contains(node.region, event.target)) outsidePress();
       });
     }
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('resize', () => setDrag(dragX, dragY));
+    }
     return island;
+  }
+
+  // ---- 拖动：只挪整岛的 transform，弹簧几何一概不碰 ----
+  const POS_KEY = 'ms-cookbook.island.v1';
+  const DRAG_SLOP = 4;                              // 点按与拖动之间的一道门槛
+  let dragId = null;
+  let dragFrom = null;
+  let dragging = false;
+  let dragX = 0;
+  let dragY = 0;
+  let dragEndedAt = -Infinity;
+
+  const viewportSize = () => ({
+    width: (typeof window !== 'undefined' && window.innerWidth) || METRICS.screen.width,
+    height: (typeof window !== 'undefined' && window.innerHeight) || METRICS.screen.height
+  });
+  // 用展开面的最大盒夹：拖到哪，展开时都还在视口里。屏比岛还窄时居中。
+  const clampDrag = (x, y) => {
+    const { width, height } = viewportSize();
+    const half = expandedWidth(islandScreenWidth(width)) / 2;
+    const maxX = width / 2 - half - 8;
+    const minY = 8 - METRICS.top;
+    const maxY = height - METRICS.top - METRICS.expanded.maxHeight - 8;
+    return {
+      x: maxX > 0 ? clamp(x, -maxX, maxX) : 0,
+      y: maxY > minY ? clamp(y, minY, maxY) : 0
+    };
+  };
+  const applyDrag = () => {
+    if (node.region) node.region.style.transform = `translate3d(${dragX.toFixed(2)}px, ${dragY.toFixed(2)}px, 0)`;
+  };
+  const setDrag = (x, y) => {
+    const next = clampDrag(x, y);
+    dragX = next.x;
+    dragY = next.y;
+    applyDrag();
+  };
+  // 位置记不住（隐私模式、配额）不该影响拖动本身。
+  const saveDrag = () => {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        localStorage.setItem(POS_KEY, JSON.stringify({ x: dragX, y: dragY }));
+      }
+    } catch { /* 下次从默认位开始 */ }
+  };
+  function loadDrag() {
+    let saved = null;
+    try {
+      const raw = typeof localStorage !== 'undefined' && localStorage ? localStorage.getItem(POS_KEY) : null;
+      saved = raw ? JSON.parse(raw) : null;
+    } catch { saved = null; }
+    if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) setDrag(saved.x, saved.y);
+    else setDrag(0, 0);
+  }
+  function dragDown(event) {
+    if (headless || dragId !== null) return;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    dragId = event.pointerId;
+    dragFrom = { x: event.clientX, y: event.clientY, ox: dragX, oy: dragY };
+    dragging = false;
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('pointermove', dragMove);
+      window.addEventListener('pointerup', dragUp);
+      window.addEventListener('pointercancel', dragUp);
+    }
+  }
+  function dragMove(event) {
+    if (event.pointerId !== dragId || !dragFrom) return;
+    const dx = event.clientX - dragFrom.x;
+    const dy = event.clientY - dragFrom.y;
+    if (!dragging) {
+      if (Math.hypot(dx, dy) < DRAG_SLOP) return;
+      dragging = true;
+      // 慢拖不能被长按阈值当成展开；松手时也不再触发点按回调。
+      pressKind = null;
+      node.region.classList.add('is-dragging');
+    }
+    setDrag(dragFrom.ox + dx, dragFrom.oy + dy);
+  }
+  function dragUp(event) {
+    if (event.pointerId !== dragId) return;
+    if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+      window.removeEventListener('pointermove', dragMove);
+      window.removeEventListener('pointerup', dragUp);
+      window.removeEventListener('pointercancel', dragUp);
+    }
+    if (dragging) {
+      dragEndedAt = clockNow();
+      saveDrag();
+      node.region.classList.remove('is-dragging');
+    }
+    dragId = null;
+    dragFrom = null;
+    dragging = false;
   }
   const contains = (parent, child) => {
     if (parent === child) return true;
@@ -921,6 +1043,16 @@
     if (spec.ring !== undefined) return ring(spec.ring, spec.size || 20);
     if (spec.bar !== undefined) return bar(spec.bar);
     if (spec.buttons) return buttonRow(spec.buttons);
+    // 标题 + 副标题同槽：原子只能返回一个节点，这里包一层把它们叠起来。
+    if (spec.title !== undefined && spec.subtitle !== undefined) {
+      const wrap = el('span', 'island-center');
+      const title = el('span', 'island-title');
+      title.textContent = String(spec.title);
+      const subtitle = el('span', 'island-subtitle');
+      subtitle.textContent = String(spec.subtitle);
+      wrap.append(title, subtitle);
+      return wrap;
+    }
     if (spec.label !== undefined) { const n = el('span', 'island-label'); n.textContent = spec.label; return n; }
     // 自走倒计时：{until: 毫秒时刻, format}。它自己读墙钟，调用方不必每帧 update。
     if (spec.until !== undefined) return timeAtomFor(spec);
@@ -1029,13 +1161,15 @@
     slot.replaceChildren(...children);
   };
 
-  const outlineOf = geometry => {
+  // dx 只给磨砂层用：SVG 的 viewBox 原点在中线，clip-path 的坐标原点在
+  // 盒子左上角，两者差半个屏宽。形状本身仍按中线坐标画。
+  const outlineOf = (geometry, dx = 0) => {
     const width = Math.max(0, geometry.right - geometry.left);
-    let d = continuousRectPath(geometry.left, geometry.top, width, geometry.height, geometry.radius, METRICS.corner.smoothing);
+    let d = continuousRectPath(geometry.left + dx, geometry.top, width, geometry.height, geometry.radius, METRICS.corner.smoothing);
     if (geometry.bubbleHeight > 0.5) {
       const bubble = geometry.bubbleRight - geometry.bubbleLeft;
       // 副胶囊与主胶囊同色填充：两条子路径并成一个 d，省一个节点也省一次合成。
-      d += ' ' + continuousRectPath(geometry.bubbleLeft, geometry.top, bubble, geometry.bubbleHeight,
+      d += ' ' + continuousRectPath(geometry.bubbleLeft + dx, geometry.top, bubble, geometry.bubbleHeight,
         geometry.bubbleHeight / 2, METRICS.corner.smoothing);
     }
     return d;
@@ -1048,6 +1182,8 @@
     const fill = outlineOf(geometry);
     node.fill.setAttribute('d', fill);
     node.keyline.setAttribute('d', fill);
+    // 磨砂层必须与形状同路径：不支持 path() 的浏览器已在 buildDom 里把它藏掉。
+    if (frostClip) node.frost.style.clipPath = `path('${outlineOf(geometry, METRICS.screen.width / 2)}')`;
     box(node.pill, geometry.left, geometry.right, geometry.top, geometry.height);
     box(node.expanded, geometry.left, geometry.right, geometry.top, geometry.height);
     box(node.bubble, geometry.bubbleLeft, geometry.bubbleRight, geometry.top, geometry.bubbleHeight);
@@ -1096,7 +1232,10 @@
     if (pressKind === 'hold' && !state.expanded && now - pressAt >= MOTION.longPress) expand();
     for (const key of SHAPE_KEYS) shapeValues[key].step(dt);
     // 每帧通知订阅者：专注计时用它自走倒计时，避免每秒几十次 update 调用。
-    for (const fn of frameSubscribers) fn(now);
+    // 一个订阅者抛异常不能连坐其余订阅者，更不能让帧循环一帧不剩。
+    for (const fn of frameSubscribers) {
+      try { fn(now); } catch (error) { reportError(error, 'frame'); }
+    }
     if (mounted && !headless) render();
   };
 
@@ -1137,18 +1276,17 @@
       else if (!headless && typeof matchMedia === 'function') reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
       mounted = true;
       Island.enabled = !headless;
-      if (!headless) {
-        let backdrop = o.backdrop;
-        if (!backdrop && typeof getComputedStyle === 'function') {
-          backdrop = (getComputedStyle(document.documentElement).getPropertyValue('--paper') || '#ffffff').trim();
-        }
-        buildDom(root, backdrop || '#ffffff');
-      }
+      if (!headless) buildDom(root);
       render = headless ? noop : scheduleFrame;
       // 有真 DOM 才自己起帧循环；无 DOM 的单测手动驱动 tick。
       if (!headless && typeof requestAnimationFrame === 'function' && !loopRunning) {
         loopRunning = true;
-        const frame = () => { tick(clockNow()); if (loopRunning) requestAnimationFrame(frame); };
+        // 任何一帧抛异常都不许断链：链一断，岛就冻在最后一次画的样子，
+        // 看起来像凭空消失。异常交给 island-watch 摆到岛上。
+        const frame = () => {
+          try { tick(clockNow()); } catch (error) { reportError(error, 'frame'); }
+          if (loopRunning) requestAnimationFrame(frame);
+        };
         requestAnimationFrame(frame);
       }
       commit();
@@ -1173,6 +1311,13 @@
         return () => {
           const index = frameSubscribers.indexOf(fn);
           if (index >= 0) frameSubscribers.splice(index, 1);
+        };
+      },
+      onError: fn => {
+        errorSubscribers.push(fn);
+        return () => {
+          const index = errorSubscribers.indexOf(fn);
+          if (index >= 0) errorSubscribers.splice(index, 1);
         };
       },
       setClock: fn => { clockNow = fn; },

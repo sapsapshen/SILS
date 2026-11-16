@@ -9,11 +9,14 @@
 :root {
   --island-z: 60;
   --island-top: 13.91px;      /* 与 assets/island.js 的 METRICS.top 同一个数 */
-  --island-ink: #fff;
-  --island-ink-quiet: rgba(255, 255, 255, .62);
-  --island-accent: #4a5cff;   /* 与 --brand/--purple 同一族，岛内唯一彩色 */
-  --island-raise: rgba(255, 255, 255, .18);
-  --island-raise-hover: rgba(255, 255, 255, .28);
+  --island-ink: #161616;
+  --island-ink-quiet: rgba(22, 22, 22, .70);
+  --island-accent: #3542d8;   /* 与 --brand/--purple 同一族，岛内唯一彩色 */
+  --island-raise: rgba(20, 20, 20, .08);
+  --island-raise-hover: rgba(20, 20, 20, .14);
+  /* 磨砂底与 .island-fill 的 .74 叠加后总不透明度约 .79：最坏情况（正文纯黑
+     压在岛后）仍是浅底深字，主文字对比约 10.6:1、次级约 5.1:1，都过 AA。 */
+  --island-frost: rgba(252, 252, 250, .18);
 }
 
 /* 整站只在阅读视图挂岛；容器本身不吃点击，胶囊自己吃。 */
@@ -50,9 +53,27 @@ body[data-view="reader"] #islandRoot { display: block; }
   height: 300px;
   overflow: visible;
 }
-.island-fill { fill: #000; }
-.island-keyline { fill: none; stroke: #fff; stroke-width: 1.5; opacity: 0; }
-.island-keyline[stroke-opacity] { opacity: 1; }
+/* 磨砂层：外层只负责按岛形裁剪，内层负责 backdrop-filter。Chrome 把
+   clip-path 与 backdrop-filter 放在同一个元素上时会吃掉滤镜（实测），
+   分两层才既有形状又有模糊。 */
+.island-frost {
+  position: absolute;
+  left: -201px;
+  top: 0;
+  width: 402px;
+  height: 300px;
+  pointer-events: none;
+}
+.island-frost-layer {
+  position: absolute;
+  inset: 0;
+  background: var(--island-frost);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
+}
+.island-fill { fill: rgba(252, 252, 250, .74); }
+/* 淡底压在白纸上没有边界就会整岛隐形：发丝边常显，不再按页面底色隐去。 */
+.island-keyline { fill: none; stroke: rgba(20, 20, 20, .18); stroke-width: 1.5; }
 .island-sensor {
   position: absolute;
   top: var(--island-top);
@@ -61,7 +82,7 @@ body[data-view="reader"] #islandRoot { display: block; }
   width: 94.85px;
   height: 36.84px;
   border-radius: 18.42px;
-  background: #000;
+  background: transparent;    /* 网页没有物理刘海：淡底岛上不再画黑色传感器 */
   pointer-events: none;
 }
 
@@ -81,11 +102,17 @@ body[data-view="reader"] #islandRoot { display: block; }
   line-height: 1.4;
   text-align: left;
   pointer-events: auto;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;             /* 触屏拖动不滚动页面 */
+  user-select: none;
+  -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
-.island-bubble { padding: 0 6.42px; justify-content: flex-start; gap: 6.085px; cursor: default; }
-.island-pill:focus-visible { outline: 3px solid #fff; outline-offset: 3px; border-radius: 20px; }
+.island-bubble { padding: 0 6.42px; justify-content: flex-start; gap: 6.085px; cursor: grab; }
+.island-pill:focus-visible { outline: 3px solid var(--island-ink); outline-offset: 3px; border-radius: 20px; }
+.island.is-dragging .island-pill,
+.island.is-dragging .island-bubble,
+.island.is-dragging .island-expanded { cursor: grabbing; }
 
 /* 上面那条 display:flex 会顶掉 UA 的 [hidden]{display:none}。不补这一条，
    收起的胶囊仍是页眉正中一个看不见、却可点可聚焦的幽灵按钮。 */
@@ -113,6 +140,7 @@ body[data-view="reader"] #islandRoot { display: block; }
   max-width: 100px;           /* 18pt 图标之后约九个字 */
 }
 .island-value { font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
+.island-center { display: block; min-width: 0; }
 .island-title {
   display: block;
   font-size: 17px;
@@ -164,7 +192,10 @@ body[data-view="reader"] #islandRoot { display: block; }
   color: var(--island-ink);
   font-size: 15px;
   line-height: 1.45;
-  pointer-events: none;
+  pointer-events: auto;           /* 卡片可见时整卡可拖；外部点击仍交给 document 收合 */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .island-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-width: 0; }
 .island-region { display: flex; align-items: flex-start; gap: 8px; min-width: 0; flex: 1 1 auto; }
@@ -186,7 +217,7 @@ body[data-view="reader"] #islandRoot { display: block; }
   pointer-events: auto;
 }
 .island-btn:hover { background: var(--island-raise-hover); }
-.island-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.island-btn:focus-visible { outline: 2px solid var(--island-ink); outline-offset: 2px; }
 @media (pointer: coarse) { .island-btn { min-height: 44px; } }
 
 /* 读屏播报：可视上不可见，但必须真的在 DOM 里。 */
@@ -204,11 +235,12 @@ body[data-view="reader"] #islandRoot { display: block; }
 }
 
 /* 展开面的投影：两层 drop-shadow，数值取自 metrics.expanded.shadow（blur 已是
-   CSS 口径的 2σ）。只在展开时出现——胶囊本身不投影，这是上游的实测结论。 */
-.island-shape { filter: none; }
+   CSS 口径的 2σ）。淡底岛在静止时也要一条轻影，否则白纸上的边界只剩发丝线；
+   展开时换成上游那两层，只把不透明度降下来适配浅色。 */
+.island-shape { filter: drop-shadow(0 1px 2px rgba(20, 20, 20, .12)); }
 .island.is-expanded .island-shape {
-  filter: drop-shadow(0 10.7px 30.76px rgba(0, 0, 0, .3533))
-          drop-shadow(0 23.43px 81.03px rgba(0, 0, 0, .0326));
+  filter: drop-shadow(0 10.7px 30.76px rgba(0, 0, 0, .18))
+          drop-shadow(0 23.43px 81.03px rgba(0, 0, 0, .08));
 }
 
 @media (prefers-reduced-motion: reduce) {

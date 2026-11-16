@@ -676,22 +676,53 @@ function matches(el, selector) {
   return el.tag === selector;
 }
 function makeDocument() {
-  return {
+  const doc = {
+    listeners: {},
     createElement: makeElement,
     createElementNS: (ns, tag) => makeElement(tag),
     documentElement: makeElement('html'),
     body: makeElement('body'),
-    addEventListener() {},
+    addEventListener(kind, fn) { (doc.listeners[kind] = doc.listeners[kind] || []).push(fn); },
     querySelector: () => null
+  };
+  return doc;
+}
+
+/* 拖动要 window 的指针事件与视口尺寸；位置要 localStorage。 */
+function makeWindow() {
+  const win = {
+    innerWidth: 1200,
+    innerHeight: 800,
+    listeners: {},
+    addEventListener(kind, fn) { (win.listeners[kind] = win.listeners[kind] || []).push(fn); },
+    removeEventListener(kind, fn) {
+      const list = win.listeners[kind] || [];
+      const index = list.indexOf(fn);
+      if (index >= 0) list.splice(index, 1);
+    }
+  };
+  return win;
+}
+function makeStorage(initial) {
+  const map = new Map(Object.entries(initial || {}));
+  return {
+    getItem: key => (map.has(key) ? map.get(key) : null),
+    setItem: (key, value) => { map.set(key, String(value)); },
+    removeItem: key => { map.delete(key); },
+    dump: () => Object.fromEntries(map)
   };
 }
 
 /* 真 DOM 路径：mount 拿到带 appendChild 的节点，于是建结构、起帧循环。 */
 function mountWithDom(options) {
-  const document = makeDocument();
+  const o = options || {};
+  const document = o.document || makeDocument();
   const root = makeElement('div');
+  const view = o.window || makeWindow();
   const Island = loadIsland({
     document,
+    window: view,
+    localStorage: o.storage,
     // 实测排在"本帧画完之后的下一个任务"；测试里让它同步跑完，这样
     // measureNow/syncShape 这条真路径仍然被走到（桩的 offsetWidth 是 0，
     // 尺寸仍由估算兜底）。
@@ -700,12 +731,12 @@ function mountWithDom(options) {
     matchMedia: () => ({ matches: false, addEventListener() {} })
   });
   let now = 0;
-  Island.mount(root, Object.assign({ clock: () => now }, options || {}));
+  Island.mount(root, { clock: () => now });
   const advance = seconds => {
     const target = now + seconds;
     while (now < target) { now = Math.min(target, now + 1 / 60); Island.internals.tick(now); }
   };
-  return { Island, root, document, advance, rendered: () => root };
+  return { Island, root, document, window: view, advance, rendered: () => root };
 }
 const findDeep = (el, selector) => (el && el.querySelector ? el.querySelector(selector) : null);
 const keylineOf = root => findDeep(root, '.island-keyline');
@@ -728,8 +759,8 @@ check('mount 出可聚焦胶囊 + SVG 形状 + 内容层', () => {
   assert.equal(pill.attrs['aria-expanded'], 'false');
   assert.ok(findDeep(root, '.island-live'), '需要一条读屏播报');
   const keyline = keylineOf(root);
-  assert.ok(!keyline || keyline.attrs['stroke-opacity'] === undefined || Number(keyline.attrs['stroke-opacity']) === 0,
-    '浅色页不画 keyline');
+  assert.ok(keyline, '淡底岛需要一条发丝边 path');
+  assert.equal(keyline.attrs['stroke-opacity'], undefined, '发丝边不再按页面底色隐去');
 });
 
 check('胶囊的读屏名来自活动 label，分裂时并列', () => {
@@ -854,10 +885,56 @@ check('键盘与外部点击接到收合/展开', () => {
   assert.notEqual(Island.presentation, 'expanded', 'Escape 该收合');
 });
 
+check('拖动：4px 门槛、整岛偏移、越界夹取、位置记住', () => {
+  const storage = makeStorage();
+  const win = makeWindow();
+  const { Island, root, document: doc, window: view, advance } = mountWithDom({ window: win, storage });
+  Island.start({ id: 'a', label: 'a', compact: { trailing: { text: '1' } }, expanded: { center: { text: 'X' } } });
+  advance(1.2);
+  const region = findDeep(root, '.island');
+  const pill = findDeep(root, 'button');
+  assert.equal(region.style.transform, 'translate3d(0.00px, 0.00px, 0)', '默认停在锚点');
+  // 真实浏览器里胶囊先收到 pointerdown（press），再冒泡到整岛开始拖。
+  fire(pill, 'pointerdown', { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 100, clientY: 100 });
+  fire(region, 'pointerdown', { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 100, clientY: 100 });
+  fire(view, 'pointermove', { pointerId: 1, clientX: 102, clientY: 100 });
+  assert.equal(region.style.transform, 'translate3d(0.00px, 0.00px, 0)', '不到 4px 不算拖');
+  fire(view, 'pointermove', { pointerId: 1, clientX: 160, clientY: 140 });
+  assert.equal(region.style.transform, 'translate3d(60.00px, 40.00px, 0)');
+  // 慢拖过了长按阈值也不能被当成展开
+  advance(0.3);
+  assert.equal(Island.presentation, 'compact', '拖动被误判成长按');
+  fire(view, 'pointerup', { pointerId: 1 });
+  const saved = JSON.parse(storage.dump()['ms-cookbook.island.v1']);
+  assert.deepEqual([saved.x, saved.y], [60, 40], '松手后位置该记住');
+
+  // 越界按展开最大盒夹回视口：1200x800 下 x=±404.83、y∈[-5.91, 598.09]
+  fire(region, 'pointerdown', { pointerId: 2, pointerType: 'mouse', button: 0, clientX: 0, clientY: 0 });
+  fire(view, 'pointermove', { pointerId: 2, clientX: 9000, clientY: 9000 });
+  const clamped = region.style.transform.match(/-?\d+\.\d+/g).map(Number);
+  assert.ok(Math.abs(clamped[0] - 404.83) < 0.1, `x 该夹到 404.83，实际 ${clamped[0]}`);
+  assert.ok(Math.abs(clamped[1] - 598.09) < 0.1, `y 该夹到 598.09，实际 ${clamped[1]}`);
+  fire(view, 'pointerup', { pointerId: 2 });
+
+  // 拖过之后点岛外，展开面仍要收回
+  Island.expand('a');
+  advance(0.6);
+  assert.equal(Island.presentation, 'expanded');
+  fire(doc, 'pointerdown', { target: doc.body });
+  assert.notEqual(Island.presentation, 'expanded', '拖动之后点外部仍要收回');
+});
+
+check('拖动：刷新后仍在原处', () => {
+  const saved = makeStorage({ 'ms-cookbook.island.v1': JSON.stringify({ x: 60, y: 40 }) });
+  const { root } = mountWithDom({ window: makeWindow(), storage: saved });
+  assert.equal(findDeep(root, '.island').style.transform, 'translate3d(60.00px, 40.00px, 0)');
+});
+
 check('index.html 装配岛且不破 eager 白名单', () => {
   const html = read('index.html');
   assert.match(html, /<link rel="stylesheet" href="assets\/island\.css\?v=[0-9a-f]{12}">/);
   assert.match(html, /<script defer src="assets\/island\.js\?v=[0-9a-f]{12}"><\/script>/);
+  assert.match(html, /<script defer src="assets\/island-watch\.js\?v=[0-9a-f]{12}"><\/script>/);
   assert.match(html, /<div id="islandRoot"><\/div>/);
   const scripts = [...html.matchAll(/<script[^>]*\ssrc="([^"]+)"/g)].map(m => m[1]);
   const eager = [...html.matchAll(/<script(?![^>]*\bdefer\b)[^>]*\ssrc="([^"]+)"/g)].map(m => m[1].split('?')[0]);
@@ -867,7 +944,7 @@ check('index.html 装配岛且不破 eager 白名单', () => {
 });
 
 check('island.css 压住 header、只在阅读视图出现、打印时消失', () => {
-  const css = read('assets/island.css');
+  const css = read('assets/island.css'), js = read('assets/island.js');
   assert.match(css, /--island-z:\s*60/);
   assert.match(css, /--island-top:\s*13\.91px/);
   assert.match(css, /#islandRoot\s*\{[^}]*position:\s*fixed/);
@@ -878,6 +955,14 @@ check('island.css 压住 header、只在阅读视图出现、打印时消失', (
   assert.match(css, /\.island-pill\[hidden\][^{]*\{[^}]*display:\s*none/s);
   assert.match(css, /body\[data-view="reader"\] #islandRoot\s*\{\s*display:\s*block/);
   assert.match(css, /@media print\s*\{\s*#islandRoot\s*\{\s*display:\s*none;?\s*\}\s*\}/);
+  // 淡底磨砂、深墨字、常显发丝边：三件缺一件都会在某个底色上看不清。
+  assert.match(css, /\.island-frost-layer\s*\{[^}]*backdrop-filter:\s*blur\(/s);
+  // 裁形每帧在 JS 里写（外层 wrapper），CSS 只负责两层盒的定位。
+  assert.match(js, /node\.frost\.style\.clipPath/);
+  assert.match(js, /island-frost-layer/);
+  assert.match(css, /\.island-fill\s*\{\s*fill:\s*rgba\(252, 252, 250, \.74\);\s*\}/);
+  assert.match(css, /--island-ink:\s*#161616/);
+  assert.match(css, /\.island-keyline\s*\{[^}]*stroke:\s*rgba\(20, 20, 20, \.18\)/s);
 });
 
 check('岛内不声明 transition，也不引任何外部资源', () => {
@@ -891,6 +976,63 @@ check('岛内不声明 transition，也不引任何外部资源', () => {
   }
   // SVG 命名空间是 XML 标识符，不是网络地址：它必须存在且仅此一处。
   assert.equal((js.match(/http:\/\/www\.w3\.org\/2000\/svg/g) || []).length, 1, 'SVG 命名空间应只声明一次');
+});
+
+check('淡底磨砂 + 高对比文字：最坏背景也过 AA', () => {
+  const css = read('assets/island.css'), js = read('assets/island.js');
+  const parse = text => {
+    const rgba = String(text).match(/rgba?\(([^)]+)\)/);
+    if (rgba) {
+      const p = rgba[1].split(',').map(Number);
+      return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+    }
+    const hex = String(text).match(/#([0-9a-f]{6})/i);
+    assert.ok(hex, `看不懂的颜色 ${text}`);
+    return {
+      r: parseInt(hex[1].slice(0, 2), 16),
+      g: parseInt(hex[1].slice(2, 4), 16),
+      b: parseInt(hex[1].slice(4, 6), 16),
+      a: 1
+    };
+  };
+  const varOf = name => {
+    const m = css.match(new RegExp(`--${name}:\\s*([^;]+);`));
+    assert.ok(m, `缺少 --${name}`);
+    return parse(m[1]);
+  };
+  const fillText = (css.match(/\.island-fill\s*\{\s*fill:\s*([^;]+);/) || [])[1];
+  assert.ok(fillText, '.island-fill 没有填充色');
+  const fill = parse(fillText);
+  assert.ok(fill.a < 1, '填充必须半透明，否则不叫透明背景');
+  const frost = varOf('island-frost');
+  const ink = varOf('island-ink');
+  const quiet = varOf('island-ink-quiet');
+  const accent = varOf('island-accent');
+  const over = (fg, bg) => ({
+    r: fg.r * fg.a + bg.r * (1 - fg.a),
+    g: fg.g * fg.a + bg.g * (1 - fg.a),
+    b: fg.b * fg.a + bg.b * (1 - fg.a),
+    a: 1
+  });
+  const luma = c => {
+    const f = v => { const s = v / 255; return s <= .04045 ? s / 12.92 : ((s + .055) / 1.055) ** 2.4; };
+    return .2126 * f(c.r) + .7152 * f(c.g) + .0722 * f(c.b);
+  };
+  const contrast = (a, b) => {
+    const [hi, lo] = [luma(a), luma(b)].sort((x, y) => y - x);
+    return (hi + .05) / (lo + .05);
+  };
+  // 三种极端底：纯黑正文、白纸、深色代码块。卡片色 = 填充叠在磨砂叠在底上。
+  for (const backdrop of [{ r: 0, g: 0, b: 0, a: 1 }, { r: 255, g: 255, b: 255, a: 1 }, { r: 15, g: 23, b: 42, a: 1 }]) {
+    const card = over(fill, over(frost, backdrop));
+    assert.ok(contrast(ink, card) >= 7, `主文字对比不足：${contrast(ink, card).toFixed(2)}:1`);
+    assert.ok(contrast(quiet, card) >= 4.5, `次级文字对比不足：${contrast(quiet, card).toFixed(2)}:1`);
+    assert.ok(contrast(accent, card) >= 3, `accent 图形对比不足：${contrast(accent, card).toFixed(2)}:1`);
+  }
+  // 磨砂层必须真的被裁成岛形：clip-path 由 JS 每帧写成同一条路径。
+  // 裁形与滤镜分两层（Chrome 同层会吃掉滤镜），所以只查这两件事各自存在。
+  assert.match(js, /clipPath/);
+  assert.match(js, /island-frost-layer/);
 });
 
 /* focus.js 的运行环境：假时钟 + 内存存储 + 记录调用的岛桩。
@@ -1339,6 +1481,72 @@ check('专注按钮三态：aria-pressed 说的是会话活着没有', () => {
     `stop 之后岛上不该还留着计时，实际 ${Island.internals.allActivities().map(a => a.id)}`);
   assert.equal(root.querySelector('.island-pill').textContent, '', '胶囊里的字该擦干净（槽位是常驻的，清的是槽位内容）');
   assert.equal(root.querySelector('.island-pill').hidden, true, 'idle 时胶囊要收掉，不留幽灵点击区');
+});
+
+check('报错守望：页面异常上岛，岛不消失也不停摆', () => {
+  let now = 0;
+  const dom = makeDocument();
+  const root = makeElement('div');
+  const win = makeWindow();
+  win.MSI18N = {
+    t: (key, vars) => {
+      const extra = Object.entries(vars || {}).map(([k, v]) => `${k}=${v}`).join(';');
+      return extra ? `${key}|${extra}` : key;
+    }
+  };
+  const sandbox = {
+    window: win,
+    console,
+    document: dom,
+    performance: { now: () => now },
+    setTimeout: fn => { fn(); return 0; },
+    matchMedia: () => ({ matches: false, addEventListener() {} })
+  };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(read('assets/island.js'), sandbox, { filename: 'assets/island.js' });
+  vm.runInContext(read('assets/island-watch.js'), sandbox, { filename: 'assets/island-watch.js' });
+  const Island = sandbox.window.Island;
+  Island.mount(root, {});
+  const advance = seconds => {
+    const target = now + seconds;
+    while (now < target) { now = Math.min(target, now + 1 / 60); Island.internals.tick(now); }
+  };
+  const emit = (kind, event) => (win.listeners[kind] || []).slice().forEach(fn => fn(event));
+  const errorOf = () => Island.internals.allActivities().find(a => a.id === 'page-error');
+
+  emit('error', { message: '探针：数据库连接失败', filename: 'https://example.test/assets/paper.js', lineno: 42 });
+  advance(0.1);
+  const first = errorOf();
+  assert.ok(first, 'window error 必须变成岛上的活动');
+  assert.equal(first.priority, 3, '报错要压过专注与进度');
+  assert.match(first.label, /数据库连接失败/);
+  assert.equal(Island.presentation, 'expanded', '报错先把整段原因展开');
+  const center = root.querySelector('.island-expanded').querySelector('[data-slot="center"]');
+  assert.match(center.textContent, /数据库连接失败/);
+  assert.match(center.textContent, /paper\.js:42/, '来源行要带上文件名与行号');
+
+  // 同一句话不反复刷屏
+  emit('error', { message: '探针：数据库连接失败' });
+  assert.equal(Island.internals.allActivities().filter(a => a.id === 'page-error').length, 1);
+
+  // 未处理的 Promise 拒绝也上岛，就地换字
+  emit('unhandledrejection', { reason: new Error('接口超时') });
+  advance(0.3);                                   // alert 的新内容 0.12s 后就位
+  assert.match(errorOf().label, /接口超时/);
+
+  // 帧内异常：tick 不许抛，岛不许消失，异常也得变成岛上的问题
+  const off = Island.internals.onFrame(() => { throw new Error('帧循环探针'); });
+  advance(0.3);
+  off();
+  assert.notEqual(Island.presentation, 'idle', '帧内异常不能让岛消失');
+  assert.match(errorOf().label, /帧循环探针/);
+
+  // 「知道了」真的能关掉，且关掉后岛回到安静的收起态
+  const before = Island.internals.allActivities().length;
+  fire(root.querySelector('.island-btn'), 'click');
+  advance(0.2);
+  assert.ok(Island.internals.allActivities().length < before, '「知道了」该结束错误活动');
 });
 
 check('参考源与上游许可随仓库发布', () => {
