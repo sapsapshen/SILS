@@ -87,6 +87,10 @@ body[data-view="reader"] #islandRoot { display: block; }
 .island-bubble { padding: 0 6.42px; justify-content: flex-start; gap: 6.085px; cursor: default; }
 .island-pill:focus-visible { outline: 3px solid #fff; outline-offset: 3px; border-radius: 20px; }
 
+/* 上面那条 display:flex 会顶掉 UA 的 [hidden]{display:none}。不补这一条，
+   收起的胶囊仍是页眉正中一个看不见、却可点可聚焦的幽灵按钮。 */
+.island-pill[hidden], .island-bubble[hidden], .island-expanded[hidden] { display: none; }
+
 /* 中间 94.85px 恒留给传感器：两侧内容只贴外缘，这是实测规则不是留白偏好。 */
 .island-slot {
   display: flex;

@@ -184,12 +184,23 @@
     if (phase !== 'running' && phase !== 'paused') return;
     const spent = elapsed();
     const label = t('island.stoppedBody', { time: formatMs(spent) });
+    const alerting = handle;            // finish() 会把它清成 null，先留一份
     finish(spent);
     if (island && spent > 0) {
-      const ended = island.start({ id: 'focus-ended', group: 'focus', priority: 1, label,
+      // 复用还在显示的那条活动，跟到点完成那条路径一致：另起一条的话，旧的
+      // 倒计时没人结束，会永远留在岛上走字。
+      const ended = alerting || island.start({ id: 'focus-ended', group: 'focus', priority: 1, label });
+      ended.update({
+        alert: true,
+        label,
         compact: { leading: { glyph: 'lotus' }, trailing: { text: formatMs(spent) } },
-        expanded: { center: { title: t('island.focus'), subtitle: label } } });
-      ended.update({ alert: true });
+        expanded: {
+          leading: { label: t('island.focus') },
+          trailing: { text: t('island.today', { time: formatMs(todayMs) }) },
+          center: { subtitle: label },
+          bottom: [{ value: formatMs(spent) }]
+        }
+      });
       completionAt = now();
       handle = ended;
       phase = 'complete';

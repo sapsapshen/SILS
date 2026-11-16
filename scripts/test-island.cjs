@@ -868,6 +868,9 @@ check('island.css 压住 header、只在阅读视图出现、打印时消失', (
   assert.match(css, /#islandRoot\s*\{[^}]*position:\s*fixed/);
   assert.match(css, /#islandRoot\s*\{[^}]*pointer-events:\s*none/);
   assert.match(css, /\.island-pill[^{]*\{[^}]*pointer-events:\s*auto/s);
+  // 胶囊自己写的是 display:flex，会顶掉 UA 的 [hidden]{display:none}；不补
+  // 一条带 [hidden] 的规则，hidden 属性就是个装饰。
+  assert.match(css, /\.island-pill\[hidden\][^{]*\{[^}]*display:\s*none/s);
   assert.match(css, /body\[data-view="reader"\] #islandRoot\s*\{\s*display:\s*block/);
   assert.match(css, /@media print\s*\{\s*#islandRoot\s*\{\s*display:\s*none;?\s*\}\s*\}/);
 });
@@ -1005,7 +1008,7 @@ check('提前结束：按实际专注时长记录，并以 alert 汇报后收起
   assert.equal(rig.saved().sessions[0].ms, 4 * MINUTE);
   rig.advance(7_500);
   assert.equal(rig.F.snapshot().phase, 'none');
-  assert.ok(rig.findCall('end', 'focus-ended'), '汇报结束后必须收掉活动');
+  assert.deepEqual(Object.keys(rig.handles), [], '汇报结束后不该有活动还挂着');
 });
 
 check('时钟回拨不倒扣，也不误判成完成', () => {
@@ -1311,6 +1314,16 @@ check('专注按钮三态：aria-pressed 说的是会话活着没有', () => {
   F.stop();
   Island.internals.tick(ms / 1000);
   assert.deepEqual(state(), ['false', 'complete'], '会话结束后按钮松开');
+  // alert 过完，岛上必须一条不剩。finish() 会把 handle 清成 null，曾经 stop()
+  // 于是另起一条 alert 汇报，把还在走字的那条丢在这儿永远不结束。
+  ms += 7_001;
+  Island.internals.tick(ms / 1000);
+  assert.equal(F.snapshot().phase, 'none');
+  // 跨 vm realm 的数组不能直接 deepEqual（原型不同），比字符串。
+  assert.equal(Island.internals.allActivities().map(a => a.id).join(','), '',
+    `stop 之后岛上不该还留着计时，实际 ${Island.internals.allActivities().map(a => a.id)}`);
+  assert.equal(root.querySelector('.island-pill').textContent, '', '胶囊里的字该擦干净（槽位是常驻的，清的是槽位内容）');
+  assert.equal(root.querySelector('.island-pill').hidden, true, 'idle 时胶囊要收掉，不留幽灵点击区');
 });
 
 check('参考源与上游许可随仓库发布', () => {

@@ -1002,6 +1002,15 @@
       fillSlot(node.expandedCenter, p.center);
       fillSlot(node.expandedTrailing, p.trailing);
       fillSlot(node.expandedBottom, p.bottom);
+    } else {
+      // idle：上一条活动的字必须擦干净。形状虽然收没了，胶囊却还在那儿，
+      // 不擦就是个会被读屏念出来、也会吃掉页眉点击的幽灵按钮。
+      fillSlot(node.pill.children[0], null);
+      fillSlot(node.pill.children[1], null);
+      fillSlot(node.bubble.children[0], null);
+      fillSlot(node.bubble.children[1], null);
+      [node.expandedLeading, node.expandedCenter, node.expandedTrailing, node.expandedBottom]
+        .forEach(region => fillSlot(region, null));
     }
     // 内容刚写完：量尺寸排到本帧画完之后，别在这一帧读。
     scheduleMeasure();
@@ -1044,7 +1053,7 @@
     node.region.classList.toggle('is-expanded', expanded);
     node.pill.setAttribute('aria-expanded', String(expanded));
     node.pill.setAttribute('aria-label', scene.label || '');
-    node.pill.hidden = expanded;
+    node.pill.hidden = expanded || scene.presentation.kind === 'idle';
     node.bubble.hidden = geometry.bubbleHeight <= 0.5;
     node.expanded.hidden = !expanded;
     node.sensor.style.opacity = String(METRICS.sensor.opacity * (expanded ? 0 : 1));
