@@ -42,9 +42,9 @@
     persist();
     const percent = Math.round(parseFloat($('#readingProgress').style.width) || 0);
     $('#readingPercent').textContent = percent + '%';
-    // 岛要的是同一个数，不是第二次测量：这里已经去抖 180ms 且不做布局读取，
-    // 再挂一个 scroll 监听就等于在 40 万字的正文上多算一遍。
-    document.dispatchEvent(new CustomEvent('purplebook:progress', { detail: { chapter: chapter.id, percent } }));
+    // 岛要的是同一个数，不是第二次测量。走 window 与 purplebook:route /
+    // purplebook:session 同一套约定，监听方也在 window 上收。
+    window.dispatchEvent(new CustomEvent('purplebook:progress', { detail: { chapter: chapter.id, percent } }));
   }
   let timer;
   window.addEventListener('scroll', () => {

@@ -348,7 +348,7 @@
     });
     window.Island.mount(root, {});
     restore();
-    document.addEventListener('purplebook:progress', event => progressFrom(event.detail));
+    window.addEventListener('purplebook:progress', event => progressFrom(event.detail));
     if (i18n) i18n.on(refreshText);
     window.addEventListener('storage', event => {
       if (event.key === TODAY_KEY && event.newValue) onExternalWrite(event.newValue);
