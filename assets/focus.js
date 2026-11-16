@@ -298,7 +298,6 @@
 
   // ---- 进度活动 ----
   const PROGRESS_ID = 'reading-progress';
-  let progressSeen = false;
   let progressTitle = '';
   let lastProgress = null;
 
@@ -330,15 +329,16 @@
         bottom: { bar: value / 100 }
       }
     };
-    if (progressSeen) island.update(PROGRESS_ID, spec);
-    else { island.start(spec); progressSeen = true; }
+    // start() 对已存在的 id 自己转成 update，不重放入场动画；活动要是被别处
+    // 结束过，这一句又能把它请回来。自己记一个"见过没有"反而会哑掉。
+    island.start(spec);
   }
 
   // 语言切换后把两条活动的文案重念一遍：内容没变，只是换了张字。
   function refreshText() {
     rollover();
     if (phase === 'running' || phase === 'paused') show(spec());
-    if (progressSeen && lastProgress) progressFrom(lastProgress);
+    if (lastProgress) progressFrom(lastProgress);
   }
 
   // ---- 浏览器装配 ----

@@ -912,6 +912,10 @@ function focusRig(config) {
   const island = {
     mount: () => {},
     start: spec => {
+      // 真岛的 start() 对已存在的 id 会转成 update，不重放入场动画。桩必须
+      // 一样，否则"活动被别处结束后再也回不来"这类 bug 在这儿测不出来。
+      const live = handles[spec.id];
+      if (live) { calls.push(['update', spec.id, spec]); return live; }
       calls.push(['start', spec.id, spec]);
       const handle = {
         id: spec.id,
@@ -1178,6 +1182,12 @@ check('进度活动注册为 reading/0，数字直接上屏', () => {
   const update = rig.calls.filter(c => c[0] === 'update' && c[1] === 'reading-progress');
   assert.equal(update.length, 1, '第二次必须是 update 而不是重复 start');
   assert.equal(update[0][2].compact.trailing.text, '47%');
+  // 活动被别处结束过（换章、提醒收尾）之后，下一条进度必须把它请回来：
+  // 只走 update 的话，岛就永久哑在这儿了。
+  rig.handles['reading-progress'].end();
+  rig.F.progressFrom({ percent: 52, chapter: 'chapter-7' });
+  assert.ok(rig.handles['reading-progress'], '进度活动被结束后必须能重建');
+  assert.equal(rig.calls[rig.calls.length - 1][2].compact.trailing.text, '52%');
 });
 
 check('语言切换重发两条活动的文案', () => {
