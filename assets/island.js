@@ -428,8 +428,11 @@
     const top = METRICS.top;
     switch (kind) {
       case 'idle': {
-        const { width, height } = METRICS.idle;
-        return { left: -width / 2, right: width / 2, top, height, radius: height / 2, ...hiddenBubble(width / 2, height) };
+        // 上游的 idle 是物理刘海，网页上没有刘海可以合回去。收到 0 宽：形状随
+        // 弹簧合拢消失，而不是在页眉正中留一颗没有内容的黑胶囊。METRICS.idle
+        // 仍然按上游实测值保留在常量表里。
+        const { height } = METRICS.idle;
+        return { left: 0, right: 0, top, height, radius: height / 2, ...hiddenBubble(0, height) };
       }
       case 'compact': {
         const c = METRICS.compact;

@@ -306,7 +306,10 @@ check('split 超过 maxSpan 时退回 minimal；没有 split 内容时也退回'
 check('shapeTarget 四态的尺寸与顶部偏移', () => {
   const { shapeTarget, METRICS } = loadIsland().internals;
   const idle = shapeTarget('idle', emptyMeasure(), 402);
-  assert.deepEqual([idle.left, idle.right, idle.height, idle.radius], [-47.425, 47.425, 36.84, 18.42]);
+  // 网页没有刘海可合回去：idle 收到 0 宽，形状画不出东西。上游的 94.85×36.84
+  // 仍然原样留在 METRICS.idle 里（上面那条常量断言守着）。
+  assert.deepEqual([idle.left, idle.right, idle.height, idle.radius], [0, 0, 36.84, 18.42]);
+  assert.equal(idle.right - idle.left, 0, 'idle 必须合拢成零宽，别在页眉留一颗黑胶囊');
   assert.equal(idle.top, 13.91);
   assert.equal(idle.bubbleHeight, 0);
   const compact = shapeTarget('compact', emptyMeasure(22, 20), 402);
@@ -572,15 +575,17 @@ check('外部点击与 Escape 收合', () => {
   assert.equal(Island.presentation, 'compact');
 });
 
-check('减动效：约 0.2s 收敛且全程不过冲', () => {
+check('减动效：0.2s 响应、0.4s 内收敛且全程不过冲', () => {
+  // 窗口从 0.3 放宽到 0.4：idle 现在合拢成 0 宽（网页没有刘海可回），减动效下
+  // 也要走完 0→150px 这一段，实测 0.317s 才进阈值。
   const { Island, advance } = rig({ reducedMotion: true });
   Island.start({ id: 'a', label: 'A', compact: { leading: { glyph: 'bookmark' }, trailing: { text: '43%' } } });
-  advance(0.3);
+  advance(0.4);
   const geometry = Island.internals.currentGeometry();
   assert.equal(geometry.settled, true, `未收敛：${JSON.stringify(geometry)}`);
   assert.equal(geometry.overshot, false, '减动效不得过冲');
   Island.expand('a');
-  advance(0.3);
+  advance(0.4);
   assert.equal(Island.internals.currentGeometry().settled, true, '展开也必须已收敛');
   assert.equal(Island.internals.currentGeometry().overshot, false);
 });
