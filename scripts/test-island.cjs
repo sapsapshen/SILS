@@ -848,6 +848,212 @@ check('岛内不声明 transition，也不引任何外部资源', () => {
   assert.equal((js.match(/http:\/\/www\.w3\.org\/2000\/svg/g) || []).length, 1, 'SVG 命名空间应只声明一次');
 });
 
+/* focus.js 的运行环境：假时钟 + 内存存储 + 记录调用的岛桩。
+   Date 被换成继承原生 Date 的假类，所以 focus.js 里的 toLocaleDateString /
+   getFullYear 等仍然按真语义工作，只是"现在"由测试控制。 */
+function focusRig(config) {
+  const options = config || {};
+  let now = options.now0 === undefined ? 1763300000000 : options.now0;
+  const memory = new Map(Object.entries(options.store || {}));
+  const storage = options.readonly
+    ? { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); }, removeItem() { throw new Error('denied'); } }
+    : {
+      getItem: key => (memory.has(key) ? memory.get(key) : null),
+      setItem: (key, value) => { memory.set(key, value); },
+      removeItem: key => { memory.delete(key); }
+    };
+  const calls = [];
+  const handles = {};
+  const island = {
+    mount: () => {},
+    start: spec => {
+      calls.push(['start', spec.id, spec]);
+      const handle = {
+        id: spec.id,
+        update: partial => calls.push(['update', spec.id, partial]),
+        end: () => { calls.push(['end', spec.id]); delete handles[spec.id]; }
+      };
+      handles[spec.id] = handle;
+      return handle;
+    },
+    update: (id, partial) => calls.push(['update', id, partial]),
+    end: id => { calls.push(['end', id]); delete handles[id]; }
+  };
+  class FakeDate extends Date {
+    constructor(...args) { if (args.length) super(...args); else super(now); }
+    static now() { return now; }
+  }
+  const sandbox = { window: {}, console, Date: FakeDate, performance: { now: () => now } };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(read('assets/focus.js'), sandbox, { filename: 'assets/focus.js' });
+  const F = sandbox.window.FocusTimer;
+  F.init({ now: () => now, storage, island, t: key => key, locale: () => 'zh-CN' });
+  const set = value => { now = value; };
+  const advance = ms => { now += ms; F.tick(); };
+  const findCall = (op, id) => calls.find(c => c[0] === op && c[1] === id);
+  return {
+    F, set, advance, now: () => now, calls, island, handles, findCall,
+    saved: () => (memory.has('ms-cookbook-focus') ? JSON.parse(memory.get('ms-cookbook-focus')) : null),
+    raw: key => (memory.has(key) ? memory.get(key) : null)
+  };
+}
+const MINUTE = 60_000;
+
+check('start 起 25:00 倒计时并注册 focus-timer 活动', () => {
+  const rig = focusRig();
+  rig.F.start(25 * MINUTE);
+  const snap = rig.F.snapshot();
+  assert.equal(snap.phase, 'running');
+  assert.equal(snap.remainingMs, 25 * MINUTE);
+  assert.equal(snap.targetMs, 25 * MINUTE);
+  const start = rig.findCall('start', 'focus-timer');
+  assert.ok(start, '没有注册 focus-timer 活动');
+  assert.equal(start[2].group, 'focus');
+  assert.equal(start[2].priority, 1, '倒计时必须是主活动，才能占住主胶囊');
+});
+
+check('墙钟推进：remaining 由时钟差算出，不靠 tick 累加', () => {
+  const rig = focusRig();
+  rig.F.start(25 * MINUTE);
+  rig.advance(61_000);                    // 一次跳 61 秒：后台标签页限流也准
+  assert.equal(rig.F.snapshot().remainingMs, 25 * MINUTE - 61_000);
+  rig.advance(5 * MINUTE);                // 中间不 tick，再来一次大跳
+  assert.equal(rig.F.snapshot().remainingMs, 25 * MINUTE - 61_000 - 5 * MINUTE);
+});
+
+check('暂停冻结时长、继续接上、+5 延长', () => {
+  const rig = focusRig();
+  rig.F.start(25 * MINUTE);
+  rig.advance(10_000);
+  rig.F.pause();
+  assert.equal(rig.F.snapshot().phase, 'paused');
+  rig.advance(5 * MINUTE);                // 暂停期间走的墙钟不计
+  assert.equal(rig.F.snapshot().remainingMs, 25 * MINUTE - 10_000);
+  rig.F.resume();
+  assert.equal(rig.F.snapshot().remainingMs, 25 * MINUTE - 10_000);
+  rig.advance(1_000);
+  assert.equal(rig.F.snapshot().remainingMs, 25 * MINUTE - 11_000);
+  rig.F.extend(5 * MINUTE);
+  assert.equal(rig.F.snapshot().remainingMs, 25 * MINUTE - 11_000 + 5 * MINUTE);
+  assert.equal(rig.F.snapshot().targetMs, 30 * MINUTE);
+});
+
+check('到点：记一次完整会话、今日累计增加、alert 报时长，7 秒后活动结束', () => {
+  const rig = focusRig();
+  rig.F.start(25 * MINUTE);
+  rig.advance(25 * MINUTE + 1);
+  let snap = rig.F.snapshot();
+  assert.equal(snap.phase, 'complete');
+  assert.equal(snap.todayMs, 25 * MINUTE);
+  const alert = rig.findCall('update', 'focus-timer');
+  assert.ok(alert && alert[2].alert === true, '完成必须以 alert 汇报');
+  const saved = rig.saved();
+  assert.equal(saved.sessions.length, 1);
+  assert.equal(saved.sessions[0].ms, 25 * MINUTE);
+  rig.advance(6_000);
+  assert.equal(rig.F.snapshot().phase, 'complete', '7s 之前活动还在，读者来得及看');
+  rig.advance(1_500);
+  assert.equal(rig.F.snapshot().phase, 'none');
+  assert.ok(rig.findCall('end', 'focus-timer'), '提醒之后必须结束活动');
+});
+
+check('提前结束：按实际专注时长记录，并以 alert 汇报后收起', () => {
+  const rig = focusRig();
+  rig.F.start(25 * MINUTE);
+  rig.advance(4 * MINUTE);
+  rig.F.stop();
+  assert.equal(rig.F.snapshot().todayMs, 4 * MINUTE, '累计当场就记上了');
+  assert.equal(rig.F.snapshot().phase, 'complete', '结束也是一次汇报，先展开再收');
+  assert.equal(rig.saved().sessions[0].ms, 4 * MINUTE);
+  rig.advance(7_500);
+  assert.equal(rig.F.snapshot().phase, 'none');
+  assert.ok(rig.findCall('end', 'focus-ended'), '汇报结束后必须收掉活动');
+});
+
+check('时钟回拨不倒扣，也不误判成完成', () => {
+  const rig = focusRig();
+  rig.F.start(25 * MINUTE);
+  rig.set(rig.now() - 10 * MINUTE);
+  assert.equal(rig.F.snapshot().remainingMs, 25 * MINUTE, 'remaining 必须夹在 [0, target]');
+  rig.F.tick();
+  assert.equal(rig.F.snapshot().phase, 'running', '不能因为时间往回走就宣布结束');
+});
+
+check('跨日归零，明细封顶 30 条', () => {
+  const rig = focusRig();
+  rig.F.start(25 * MINUTE);
+  rig.advance(25 * MINUTE + 1);
+  rig.advance(8_000);
+  assert.equal(rig.F.snapshot().todayMs, 25 * MINUTE);
+  rig.set(rig.now() + 25 * MINUTE * 60);        // 第二天
+  assert.equal(rig.F.snapshot().todayMs, 0, '跨日必须归零');
+  for (let i = 0; i < 40; i += 1) {
+    rig.F.start(25 * MINUTE);
+    rig.advance(25 * MINUTE + 1);
+    rig.advance(8_000);
+  }
+  assert.ok(rig.saved().sessions.length <= 30, `明细未被截断：${rig.saved().sessions.length}`);
+});
+
+check('存储损坏或不可写都不影响会话', () => {
+  const broken = focusRig({ store: { 'ms-cookbook-focus': '{not json' } });
+  assert.equal(broken.F.snapshot().todayMs, 0);
+  broken.F.start(25 * MINUTE);
+  assert.equal(broken.F.snapshot().phase, 'running');
+
+  const wrong = focusRig({ store: { 'ms-cookbook-focus': JSON.stringify({ date: 'x', totalMs: 'abc', sessions: [{ ms: 'no' }, { ms: 5, endedAt: 1 }] }) } });
+  assert.equal(wrong.F.snapshot().todayMs, 0, '字段类型不符要整体回退默认，不逐字段猜');
+
+  const readonly = focusRig({ readonly: true });
+  readonly.F.start(25 * MINUTE);
+  assert.equal(readonly.F.snapshot().phase, 'running', '存储被拒绝时会话照跑');
+  readonly.advance(25 * MINUTE + 1);
+  assert.equal(readonly.F.snapshot().phase, 'complete', '完成照常');
+  assert.equal(readonly.F.snapshot().todayMs, 25 * MINUTE, '累计只存在于内存');
+});
+
+check('刷新后按墙钟恢复进行中的会话', () => {
+  const rig = focusRig();
+  rig.F.start(25 * MINUTE);
+  rig.advance(MINUTE);
+  const saved = rig.saved();
+  assert.ok(saved.active, '进行中的会话必须落盘');
+  const rig2 = focusRig({ now0: rig.now(), store: { 'ms-cookbook-focus': JSON.stringify(saved) } });
+  rig2.F.restore();
+  assert.equal(rig2.F.snapshot().phase, 'running');
+  assert.equal(rig2.F.snapshot().remainingMs, 24 * MINUTE);
+  assert.ok(rig2.findCall('start', 'focus-timer'), '恢复时要把活动重新挂上');
+});
+
+check('超过一天的 active 不再恢复（与跨日归零分开的两道闸）', () => {
+  const rig = focusRig();
+  rig.F.start(25 * MINUTE);
+  const saved = rig.saved();
+  const later = rig.now() + 25 * 60 * MINUTE;
+  const localDate = ms => {
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  saved.date = localDate(later);            // 让"日期是今天"这一关通过，只测 savedAt 那道
+  const stale = focusRig({ now0: later, store: { 'ms-cookbook-focus': JSON.stringify(saved) } });
+  stale.F.restore();
+  assert.equal(stale.F.snapshot().phase, 'none');
+});
+
+check('storage 事件让另一个标签页的累计可见', () => {
+  const memory = {};
+  const rig = focusRig({ store: memory });
+  rig.F.start(25 * MINUTE);
+  rig.advance(25 * MINUTE + 1);
+  rig.advance(8_000);
+  const other = JSON.parse(JSON.stringify(rig.saved()));
+  other.totalMs += 10 * MINUTE;
+  other.sessions.push({ endedAt: rig.now(), ms: 10 * MINUTE });
+  rig.F.onExternalWrite(JSON.stringify(other));           // 模拟 storage 事件
+  assert.equal(rig.F.snapshot().todayMs, 25 * MINUTE + 10 * MINUTE);
+});
+
 check('参考源与上游许可随仓库发布', () => {
   for (const f of ['spring.ts', 'path.ts', 'geometry.ts', 'metrics.ts', 'store.ts', 'README.md', 'motion-subset.ts', 'LICENSE']) {
     assert.ok(existsSync(resolve(ROOT, REF, f)), `missing ${REF}/${f}`);
