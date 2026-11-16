@@ -401,3 +401,39 @@ node scripts/version-assets.mjs
 ### 11.5 仍未接入的一项
 
 分裂的"黏颈"（`bridgePath` 已在引擎里并带单测）尚未接进副胶囊的进出动画：目前副胶囊按弹簧直接落位，缺那 0.4s 的拉丝。这是 §3.2 预留的独立里程碑。
+
+---
+
+## 12. 生产部署记录（2026-11-16，`http://120.53.222.178:8899`）
+
+部署前发现生产树比 main 落后两次发布，且 `app.py` 的 `import httpx2` 在生产 Python 3.10 上装不出来（`httpx2>=2.16` 要求 ≥3.11）。经确认，发布范围由"只上岛"改为**整包上 main**，并为此做了一次用户空间的运行时升级。
+
+### 12.1 运行时升级（不动系统，不要求 root）
+
+| 项 | 做法 |
+|---|---|
+| 解释器 | `uv 0.13.8` 装到 `~/.local/bin`；`uv python install 3.12` → CPython 3.12.16（用户空间，无需 sudo） |
+| 依赖 | `/data/ms-cookbook/.venv-312`（58MB），按 main 的 `requirements.txt` 安装：fastapi 0.163.1、starlette 1.10.0、authlib 1.9.6、psycopg 3.3.9、tzdata 2026.6、httpx2 |
+| 切换点 | `run.sh` 只改第 4 行 `exec .venv/bin/python` → `exec .venv-312/bin/python`；旧 `.venv` 原地保留 |
+| 镜像 | `uv` 不读 `pip.conf`，必须显式 `UV_DEFAULT_INDEX=https://mirrors.aliyun.com/pypi/simple/`，否则默认打 pypi.org 在国内极慢（第一次安装就是这么卡住的） |
+
+### 12.2 上线前的闸门（全部在动生产之前完成）
+
+1. 备份 `backups/source-before-island-20261116-155622.tar.gz`（160M，含 `.venv`）。
+2. 差异清单：`git ls-files` 939 个文件逐文件哈希比对 → **78 个文件 / 1.9MB** 待传（含 `app.py`、`content.js`、`exercises.js`、两张 webp 头图、`NOTICE`、`404.html`、`deploy/`、`tests/test_production_hardening.py` 等服务器上原本不存在的东西）。
+3. 干跑区 `/tmp/ms-next` = 生产树完整副本 + 这 78 个文件：`pytest tests` **176 passed**；`test-island 73`、`test-motion 23`、`test-asset-loading 14`、`test-reader-copy 9`、`test-i18n`、`test-ci-coverage`、`check-site` 全绿。
+4. 用新 venv 在 8900 端口做一次启动预检（8899 全程不动）：首页 200、`/api/session` 200、`assets/island.js` 200、友好 404 ✓。
+5. 才同步文件 → 备份 `run.sh` 到 `backups/run.sh.before-island-<ts>` → 改解释器 → `pm2 restart ms-cookbook --update-env`。
+
+### 12.3 线上验证
+
+- 首页 200，安全头齐（CSP `script-src 'self' 'wasm-unsafe-eval'`、`nosniff`、`referrer-policy`、`permissions-policy`）→ 11-14 那次整改这次真的上线了。
+- 岛资源：`island.js` 18,623B / `island.css` 2,732B / `focus.js` 5,299B 均 `content-encoding: gzip`；带 `?v=` 时 `cache-control: public, max-age=31536000, immutable` ✓（不带 `?v=` 时是 `must-revalidate`，符合预期）。
+- API：`/api/session`、`/api/chapters/chapter-1/entries`、`/api/wishes`、`/api/exercises/progress`、`/api/analytics/summary` 全 200；`pm2-err.log` 只有正常的 shutdown/startup 行。
+- 浏览器实测：岛 `enabled`，静止为进度胶囊，开计时后分裂（副胶囊 62.18），展开面显示大号剩余时间与三个按钮，读屏名并列；刷新后按墙钟恢复进行中会话 ✓；控制台除既有两项外无岛相关报错。
+
+### 12.4 已知遗留（都不是本次引入）
+
+- 浏览器忽略 `Cross-Origin-Opener-Policy`：`http://120.53.222.178:8899` 不是可信来源，COOP 只在 HTTPS 或 localhost 下生效。要消掉它得上域名 + TLS（`deploy/README.md` 描述的目标态）。
+- 「懒加载图片缺显式尺寸」14 处：内容侧既有问题。
+- 生产机仍留着旧 `.venv`（Python 3.10）与 `run.sh` 备份，回滚 = 还原 `run.sh` 那一行 + `pm2 restart`；源码回滚 = 解 `backups/source-before-island-*.tar.gz`。
