@@ -503,31 +503,177 @@
     return 0;
   };
 
-  // ---- 状态与时序（Task 6-8 填充）----
-  let clock = () => (typeof performance === 'undefined' ? Date.now() / 1000 : performance.now() / 1000);
-  let reducedMotion = false;
+  // ---- 活动栈：store.ts ----
+  const state = { activities: [], expanded: null, front: {}, handoff: null, nextOrder: 1 };
+  let clockNow = () => (typeof performance === 'undefined' ? Date.now() / 1000 : performance.now() / 1000);
+  let render = () => {};
+  const timers = [];                                  // {at, fn}，Task 7 的 alert 与长按用
+  const bySort = (a, b) => b.priority - a.priority || a.order - b.order;
+  const find = id => state.activities.find(a => a.id === id);
+  const commit = () => { render(); };
+
+  // 一侧为空时用另一侧，都没有时用 compact：上游 minimal 的兜底顺序。
+  const minimalOf = content => (content && content.minimal) || (content && content.compact) || null;
+
+  // 同组活动轮流显示：被 expand/alert 顶到前面的那条优先，否则最先开始的胜出。
+  const shownOf = snapshot => group => {
+    const members = snapshot.activities.filter(a => a.group === group);
+    const forward = snapshot.front[group];
+    if (forward !== undefined && members.some(a => a.id === forward)) return forward;
+    const first = members.reduce((best, a) => (best === null || a.order < best.order ? a : best), null);
+    return first ? first.id : null;
+  };
+  const isShown = (snapshot, activity) =>
+    activity.group === null || (snapshot.handoff !== activity.group && shownOf(snapshot)(activity.group) === activity.id);
+
+  const deriveScene = snapshot => {
+    const shown = snapshot.activities.filter(a => isShown(snapshot, a));
+    const first = shown[0];
+    const second = shown[1];
+    const expanded = snapshot.expanded ? snapshot.activities.find(a => a.id === snapshot.expanded.id) : undefined;
+    if (expanded) {
+      return {
+        presentation: { kind: 'expanded', ...(expanded.content.expanded || {}) },
+        contentKey: `expanded:${expanded.id}#${expanded.revision}`,
+        label: expanded.label, primary: expanded, detached: null
+      };
+    }
+    if (!first) return { presentation: { kind: 'idle' }, contentKey: 'idle', label: '', primary: null, detached: null };
+    if (!second) {
+      return {
+        presentation: { kind: 'compact', ...(first.content.compact || {}) },
+        contentKey: `compact:${first.id}#${first.revision}`,
+        label: first.label, primary: first, detached: null
+      };
+    }
+    // iOS 27 的分裂里两枚胶囊都显示各自活动的紧凑内容；minimal 只是装不下时的退路。
+    return {
+      presentation: {
+        kind: 'minimal',
+        attached: minimalOf(first.content),
+        detached: minimalOf(second.content),
+        split: { attached: first.content.compact || {}, detached: second.content.compact || {} }
+      },
+      contentKey: `minimal:${first.id}#${first.revision}:${second.id}#${second.revision}`,
+      label: `${first.label}, ${second.label}`,
+      primary: first, detached: second
+    };
+  };
+
+  // 深合并：只覆盖给到的槽，所以 {compact:{trailing}} 保留 leading。
+  const merge = (base, over) => {
+    if (!base) return over;
+    const out = { ...base };
+    for (const key of Object.keys(over || {})) out[key] = over[key];
+    return out;
+  };
+
+  const push = (at, fn) => { timers.push({ at, fn }); timers.sort((a, b) => a.at - b.at); };
+  const scheduleAlert = (id, at) => { /* Task 7 实现 alert 的展开与回落 */ };
+  // Task 8 把它接成 rAF 帧循环；先占位，避免 mount 前有未定义引用。
+  function scheduleFrame() { /* Task 8 */ }
+
+  const handle = id => ({ id, update: partial => update(id, partial), end: () => end(id) });
+
+  function start(options) {
+    const existing = find(options.id);
+    if (existing) { update(options.id, options); return handle(options.id); }
+    state.activities.push({
+      id: options.id,
+      label: options.label || options.id,
+      priority: options.priority || 0,
+      group: options.group === undefined ? null : options.group,
+      order: state.nextOrder++,
+      startedAt: clockNow(),
+      revision: 0,
+      content: { compact: options.compact || null, minimal: options.minimal || null, expanded: options.expanded || null },
+      onPress: options.onPress || null
+    });
+    state.activities.sort(bySort);
+    if (options.alert) scheduleAlert(options.id, clockNow());
+    commit();
+    return handle(options.id);
+  }
+
+  function update(id, partial) {
+    const activity = find(id);
+    if (!activity) return;
+    if (partial.compact) activity.content.compact = merge(activity.content.compact, partial.compact);
+    if (partial.expanded) activity.content.expanded = merge(activity.content.expanded, partial.expanded);
+    if (partial.minimal) activity.content.minimal = merge(activity.content.minimal, partial.minimal);
+    if (partial.label) activity.label = partial.label;
+    if (partial.priority !== undefined) activity.priority = partial.priority;
+    if (partial.onPress) activity.onPress = partial.onPress;
+    // 内容"换脸"而非"变值"时 bump revision：渲染层据此换图层并走 crossfade。
+    if (partial.transition === 'crossfade') activity.revision += 1;
+    if (partial.alert) scheduleAlert(id, clockNow());
+    state.activities.sort(bySort);
+    commit();
+  }
+
+  function end(id) {
+    const index = state.activities.findIndex(a => a.id === id);
+    if (index < 0) return;
+    const [gone] = state.activities.splice(index, 1);
+    if (state.expanded && state.expanded.id === id) state.expanded = null;
+    if (gone.group !== null && state.front[gone.group] === id) delete state.front[gone.group];
+    for (let i = timers.length - 1; i >= 0; i -= 1) if (timers[i].id === id) timers.splice(i, 1);
+    commit();
+  }
+
+  function expand(id) {
+    const scene = deriveScene(state);
+    const target = id ? find(id) : scene.primary;
+    if (!target) return;
+    if (target.group !== null) state.front[target.group] = target.id;
+    state.expanded = { id: target.id, at: clockNow() };
+    commit();
+  }
+
+  function collapse() { state.expanded = null; commit(); }
+
+
   const noop = () => {};
+  let reducedMotion = false;
+  let mounted = false;                    // mount 之前所有公开方法都必须惰性
+  let headless = true;                    // 有没有真 DOM 可画
   const deadHandle = { id: '', update: noop, end: noop };
 
   const Island = {
     enabled: false,
-    presentation: 'idle',
-    activities: [],
-    mount: noop,
-    start: () => deadHandle,
-    update: noop,
-    end: noop,
-    expand: noop,
-    collapse: noop,
-    press: noop,
+    mount(root, options) {
+      const o = options || {};
+      if (o.clock) clockNow = o.clock;
+      if (o.reducedMotion !== undefined) reducedMotion = !!o.reducedMotion;
+      // 判据用能力而不是 typeof document：Task 6/7/10/11 的单测传裸对象，走
+      // headless —— 状态机照常跑，只是不建 DOM、不起帧循环。
+      headless = !root || typeof root.appendChild !== 'function';
+      mounted = true;
+      Island.enabled = !headless;
+      render = headless ? noop : () => scheduleFrame();
+      commit();
+    },
+    start: options => (mounted ? start(options) : deadHandle),
+    update: (id, partial) => { if (mounted) update(id, partial); },
+    end: id => { if (mounted) end(id); },
+    expand: id => { if (mounted) expand(id); },
+    collapse: () => { if (mounted) collapse(); },
+    press: noop,                          // Task 7：'hold' | 'tap'
     internals: {
       METRICS, MOTION, REDUCED_SPRING, luma, keylineAlpha, solveSpring, AnimatedValue,
       fmt, edgeEase, continuousRectPath, roundedRectPath, capsulePath, bridgePath, cuspPath, chamferPath,
       islandScreenWidth, expandedWidth, compactSides, splitLayout, bubbleTrailing, shapeTarget, shapeTransition,
-      setClock: fn => { clock = fn; }
+      deriveScene, isShown, minimalOf,
+      scene: () => deriveScene(state),
+      allActivities: () => state.activities.slice(),
+      setClock: fn => { clockNow = fn; },
+      setReducedMotion: value => { reducedMotion = !!value; },
+      isReduced: () => reducedMotion
     }
   };
-  Island.internals.setReducedMotion = value => { reducedMotion = !!value; };
-  Island.internals.isReduced = () => reducedMotion;
+  Object.defineProperties(Island, {
+    presentation: { get: () => (mounted ? deriveScene(state).presentation.kind : 'idle') },
+    activities: { get: () => (mounted ? state.activities.filter(a => isShown(state, a)) : []) }
+  });
   window.Island = Island;
 })();

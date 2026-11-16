@@ -359,6 +359,119 @@ function shapeTransitionsIn(MOTION) {
   return [...names];
 }
 
+const mk = id => ({
+  id, label: id,
+  compact: { leading: { text: 'L' + id }, trailing: { text: id } },
+  expanded: { center: { text: 'E' + id } }
+});
+
+check('start 返回句柄，同 id 再 start 是更新而非新增', () => {
+  const Island = loadIsland();
+  Island.mount({});
+  Island.start(mk('a'));
+  Island.start(mk('a'));
+  assert.equal(Island.activities.length, 1);
+  assert.equal(Island.presentation, 'compact');
+});
+
+check('句柄的 update/end 只作用于自己那条活动', () => {
+  const Island = loadIsland();
+  Island.mount({});
+  const first = Island.start(mk('a'));
+  Island.start(mk('b'));
+  first.end();
+  sameShape(Island.activities.map(a => a.id), ['b']);
+  first.end();                                  // 已结束再结束必须无害
+  assert.equal(Island.activities.length, 1);
+});
+
+check('两条活动 -> 分裂，priority 高者占主胶囊', () => {
+  const Island = loadIsland();
+  Island.mount({});
+  Island.start({ ...mk('progress'), group: 'reading', priority: 0 });
+  Island.start({ ...mk('timer'), group: 'focus', priority: 1 });
+  assert.equal(Island.presentation, 'minimal');
+  sameShape(Island.activities.map(a => a.id), ['timer', 'progress']);
+});
+
+check('同 group 一次只显示一条，先开始的显示', () => {
+  const Island = loadIsland();
+  Island.mount({});
+  Island.start({ ...mk('run1'), group: 'runs' });
+  Island.start({ ...mk('run2'), group: 'runs' });
+  assert.equal(Island.presentation, 'compact');
+  assert.equal(Island.activities[0].id, 'run1');
+  assert.equal(Island.activities.length, 1, '在显的同组活动只有一条');
+  assert.equal(Island.internals.allActivities().length, 2, '隐藏的那条仍在栈里');
+});
+
+check('update 深合并只覆盖给定槽', () => {
+  const Island = loadIsland();
+  Island.mount({});
+  const h = Island.start(mk('a'));
+  h.update({ compact: { trailing: { text: '47%' } } });
+  sameShape(Island.activities[0].content.compact, { leading: { text: 'La' }, trailing: { text: '47%' } });
+  h.update({ label: '本章阅读进度 47%' });
+  assert.equal(Island.activities[0].label, '本章阅读进度 47%');
+  h.update({ expanded: { bottom: { bar: 0.47 } } });
+  sameShape(Island.activities[0].content.expanded, { center: { text: 'Ea' }, bottom: { bar: 0.47 } });
+});
+
+check('crossfade 更新换 revision，普通更新不换', () => {
+  const Island = loadIsland();
+  Island.mount({});
+  const h = Island.start(mk('a'));
+  assert.equal(Island.activities[0].revision, 0);
+  h.update({ compact: { trailing: { text: '2' } } });
+  assert.equal(Island.activities[0].revision, 0, '同一内容的更新不该换脸');
+  h.update({ transition: 'crossfade', compact: { trailing: { text: '第三章' } } });
+  assert.equal(Island.activities[0].revision, 1, '换内容必须 bump revision，渲染层据此替换图层');
+});
+
+check('end 后回 idle；expand/collapse 决定 expanded 态', () => {
+  const Island = loadIsland();
+  Island.mount({});
+  const h = Island.start(mk('a'));
+  assert.equal(Island.presentation, 'compact');
+  Island.expand('a');
+  assert.equal(Island.presentation, 'expanded');
+  Island.collapse();
+  assert.equal(Island.presentation, 'compact');
+  h.end();
+  assert.equal(Island.presentation, 'idle');
+  sameShape(Island.activities, []);
+});
+
+check('分裂态的读屏标签把两条并列（store.ts 的 `${first}, ${second}`）', () => {
+  const Island = loadIsland();
+  Island.mount({});
+  Island.start({ id: 'timer', group: 'focus', priority: 1, label: '专注剩余 24 分 58 秒', compact: { trailing: { text: '24:58' } } });
+  Island.start({ id: 'progress', group: 'reading', priority: 0, label: '本章 43%', compact: { trailing: { text: '43%' } } });
+  assert.equal(Island.internals.scene().label, '专注剩余 24 分 58 秒, 本章 43%');
+  Island.expand('progress');
+  assert.equal(Island.internals.scene().label, '本章 43%', '展开单条时只念那一条');
+});
+
+check('expand 一条隐藏的同组活动会把它顶到前面', () => {
+  const Island = loadIsland();
+  Island.mount({});
+  Island.start({ ...mk('run1'), group: 'runs' });
+  Island.start({ ...mk('run2'), group: 'runs' });
+  Island.expand('run2');
+  assert.equal(Island.presentation, 'expanded');
+  assert.equal(Island.activities[0].id, 'run2');
+});
+
+check('主活动次序：priority 优先，其次先开始', () => {
+  const Island = loadIsland();
+  Island.mount({});
+  Island.start({ id: 'low', label: 'low', priority: 0, compact: { trailing: { text: 'a' } } });
+  Island.start({ id: 'mid', label: 'mid', priority: 5, compact: { trailing: { text: 'b' } } });
+  Island.start({ id: 'high', label: 'high', priority: 9, compact: { trailing: { text: 'c' } } });
+  Island.start({ id: 'mid2', label: 'mid2', priority: 5, compact: { trailing: { text: 'd' } } });
+  sameShape(Island.activities.map(a => a.id), ['high', 'mid', 'mid2', 'low']);
+});
+
 check('参考源与上游许可随仓库发布', () => {
   for (const f of ['spring.ts', 'path.ts', 'geometry.ts', 'metrics.ts', 'store.ts', 'README.md', 'motion-subset.ts', 'LICENSE']) {
     assert.ok(existsSync(resolve(ROOT, REF, f)), `missing ${REF}/${f}`);
