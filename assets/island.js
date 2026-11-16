@@ -360,6 +360,124 @@
     );
   };
 
+  // ---- geometry.ts：形状要去哪里 ----
+  // left/right 是相对屏幕中线的偏移，所以传感器区恒在 0；top 从屏幕顶算。
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+  // 岛按哪个宽度排版：容器宽度，但永不宽过一台手机。
+  const islandScreenWidth = containerWidth =>
+    (containerWidth > 0 ? Math.min(containerWidth, METRICS.screen.width) : METRICS.screen.width);
+  const expandedWidth = screenWidth => screenWidth - 2 * METRICS.expanded.sideInset;
+  const hiddenBubble = (right, height) => ({ bubbleLeft: right - height, bubbleRight: right, bubbleHeight: 0 });
+
+  // 紧凑胶囊两侧的伸展：一侧为空就留在传感器边，两侧都有内容才受 balance 约束。
+  const compactSides = measure => {
+    const c = METRICS.compact;
+    const side = (slot, inner) => (slot > 0 ? inner + Math.min(slot, c.maxSlotWidth) + c.edgePadding : 0);
+    const leading = side(measure.leading, c.innerPadding.leading);
+    const trailing = side(measure.trailing, c.innerPadding.trailing);
+    if (leading <= 0 || trailing <= 0 || c.balance <= 0) return { leading, trailing };
+    return { leading: Math.max(leading, trailing * c.balance), trailing: Math.max(trailing, leading * c.balance) };
+  };
+
+  // iOS 27 的分裂：两枚胶囊各显示自己活动的紧凑内容。主胶囊占到传感器右边就
+  // 停，副胶囊恒 62.18；总跨度超过 maxSpan 时上游退回 minimal，这里照做。
+  const splitLayout = measure => {
+    if (!measure.split) return null;
+    const s = METRICS.split;
+    const sensor = METRICS.compact.sensorWidth / 2;
+    const { attached, detached } = measure.split;
+    const pair = (slots, gap) => slots.leading + slots.trailing + (slots.leading > 0 && slots.trailing > 0 ? gap : 0);
+    const attachedWidth = s.attached.outerPadding + pair(attached, s.attached.gap) + s.attached.innerPadding;
+    const bubbleWidth = s.detached.width > 0 && detached.trailing > 0
+      ? s.detached.width
+      : Math.max(METRICS.minimal.detached.minWidth,
+        s.detached.outerPadding + pair(detached, s.detached.gap) +
+        (detached.trailing > 0 ? s.detached.trailingPadding : s.detached.outerPadding));
+    const left = -(sensor + attachedWidth);
+    const bubbleLeft = sensor + METRICS.minimal.gap;
+    const bubbleRight = bubbleLeft + bubbleWidth;
+    if (bubbleRight - left > s.maxSpan) return null;
+    return { left, right: sensor, bubbleLeft, bubbleRight, attachedWidth, bubbleWidth };
+  };
+
+  // 副胶囊 trailing 槽在静止时的画法：画多宽（内容裁到剩的那点空间）与中心在哪，
+  // 从右边量起，这样胶囊从主胶囊里弹出来时内容跟着右缘走。
+  const bubbleTrailing = (detached, bubbleWidth) => {
+    const d = METRICS.split.detached;
+    if (d.width <= 0) {
+      return { width: detached.trailing, fromRight: d.trailingPadding + detached.trailing / 2, room: Infinity };
+    }
+    const start = d.outerPadding + detached.leading + d.slotGap;
+    const end = bubbleWidth - d.slotEnd;
+    const room = Math.max(0, end - start);
+    return { width: Math.min(detached.trailing, room), fromRight: bubbleWidth - (start + end) / 2, room };
+  };
+
+  const shapeTarget = (kind, measure, containerWidth) => {
+    const screenWidth = islandScreenWidth(containerWidth);
+    const top = METRICS.top;
+    switch (kind) {
+      case 'idle': {
+        const { width, height } = METRICS.idle;
+        return { left: -width / 2, right: width / 2, top, height, radius: height / 2, ...hiddenBubble(width / 2, height) };
+      }
+      case 'compact': {
+        const c = METRICS.compact;
+        const sensor = c.sensorWidth / 2;
+        // 两侧各按自己的内容生长，所以模拟器上的紧凑胶囊本来就略偏中心。
+        const sides = compactSides(measure);
+        const left = -Math.min(sensor + sides.leading, c.maxWidth / 2);
+        const right = Math.min(sensor + sides.trailing, c.maxWidth / 2);
+        return { left, right, top, height: c.height, radius: c.height / 2, ...hiddenBubble(right, c.height) };
+      }
+      case 'minimal': {
+        const m = METRICS.minimal;
+        const sensor = METRICS.compact.sensorWidth / 2;
+        const split = splitLayout(measure);
+        if (split) return { ...split, top, height: m.height, radius: m.height / 2, bubbleHeight: m.height };
+        // 退回 minimal：主胶囊保持传感器右缘，向左生长以容纳自己的内容。
+        const left = measure.attached > 0 ? -(sensor + m.attached.innerPadding + measure.attached + m.attached.outerPadding) : -sensor;
+        const right = sensor;
+        const bubbleWidth = Math.max(m.detached.minWidth, measure.detached + 2 * m.detached.padding);
+        return {
+          left, right, top, height: m.height, radius: m.height / 2,
+          bubbleLeft: right + m.gap, bubbleRight: right + m.gap + bubbleWidth, bubbleHeight: m.height
+        };
+      }
+      case 'expanded': {
+        const e = METRICS.expanded;
+        const half = expandedWidth(screenWidth) / 2;
+        const height = clamp(measure.expandedHeight + e.padding.top + e.padding.bottom, e.minHeight, e.maxHeight);
+        return { left: -half, right: half, top: e.top, height, radius: e.radius, ...hiddenBubble(half, METRICS.compact.height) };
+      }
+      default:
+        return shapeTarget('idle', measure, containerWidth);
+    }
+  };
+
+  // 两次呈现之间该用哪条弹簧。swap 指"换的活动"（A 的紧凑到 B 的展开，要经过
+  // idle）；swelling 指长按已把胶囊胀起来；alert 指离开的展开面是一次提醒。
+  const shapeTransition = (from, to, options) => {
+    const o = options || {};
+    if (from === to) return 'resize';
+    if (to === 'expanded') {
+      if (from === 'idle') return 'appearExpand';
+      if (from === 'minimal' || o.swap) return 'swap';
+      return o.swelling ? 'pressExpand' : 'expand';
+    }
+    if (from === 'expanded') {
+      if (to === 'minimal') return 'collapseSplit';
+      if (to === 'idle') return 'dismiss';
+      return o.alert ? 'alertCollapse' : 'collapse';
+    }
+    if (to === 'idle') return 'dismiss';
+    if (from === 'idle') return 'appear';
+    if (to === 'minimal') return 'split';
+    return 'unsplit';
+  };
+
+
   // ---- keyline：metrics.ts 的 keylineFade ----
   // 上游试过一条指数线，过不了两个实测点，所以按段插值而不是外推。
   const luma = hex => {
@@ -405,6 +523,7 @@
     internals: {
       METRICS, MOTION, REDUCED_SPRING, luma, keylineAlpha, solveSpring, AnimatedValue,
       fmt, edgeEase, continuousRectPath, roundedRectPath, capsulePath, bridgePath, cuspPath, chamferPath,
+      islandScreenWidth, expandedWidth, compactSides, splitLayout, bubbleTrailing, shapeTarget, shapeTransition,
       setClock: fn => { clock = fn; }
     }
   };

@@ -247,6 +247,118 @@ check('bridgePath 在间隙达 maxGap 时断开（黏颈里程碑用）', () => 
     > spread(d), '更接近的两圆应给出更饱满的颈');
 });
 
+const emptyMeasure = (leading = 0, trailing = 0) => ({
+  leading, trailing, attached: 0, detached: 0, split: null, expandedHeight: 0
+});
+
+check('compact：两侧各按内容生长，短边按 balance 补齐', () => {
+  const { compactSides } = loadIsland().internals;
+  const progress = compactSides(emptyMeasure(22, 20));       // 书签图标 + "43%"
+  assert.ok(Math.abs(progress.leading - 29) < 0.01, `leading ${progress.leading}`);
+  assert.ok(Math.abs(progress.trailing - 27.25) < 0.01, `trailing ${progress.trailing}`);
+  const focus = compactSides(emptyMeasure(22, 38));          // 莲座图标 + "24:58"
+  assert.ok(Math.abs(focus.leading - 33.824) < 0.01, `leading ${focus.leading}`);
+  assert.ok(Math.abs(focus.trailing - 45.25) < 0.01, `trailing ${focus.trailing}`);
+  // 一侧为空时留在传感器边：balance 只管两侧都有内容的情况
+  assert.equal(compactSides(emptyMeasure(0, 40)).leading, 0);
+  // slot 上限 72：超宽内容不越过 maxSlotWidth
+  assert.ok(Math.abs(compactSides(emptyMeasure(22, 200)).trailing - 79.25) < 0.01);
+  // balance 的真实作用：短边长到"对方原始伸展"的 74.75%，不是内容宽度的 74.75%
+  const lopsided = compactSides(emptyMeasure(8, 60));
+  assert.ok(Math.abs(lopsided.leading - 67.25 * 0.7475) < 0.01, `balance 未生效：${lopsided.leading}`);
+  assert.ok(Math.abs(lopsided.trailing - 67.25) < 0.01, `长边不该被缩短：${lopsided.trailing}`);
+});
+
+check('split：主胶囊占到传感器右边，副胶囊恒 62.18', () => {
+  const { splitLayout } = loadIsland().internals;
+  const m = { ...emptyMeasure(), split: { attached: { leading: 22, trailing: 38 }, detached: { leading: 22, trailing: 20 } } };
+  const l = splitLayout(m);
+  assert.ok(Math.abs(l.left - (-128.345)) < 0.01, `left ${l.left}`);
+  assert.ok(Math.abs(l.right - 47.425) < 0.01, `right ${l.right}`);
+  assert.ok(Math.abs(l.bubbleLeft - 55.245) < 0.01, `bubbleLeft ${l.bubbleLeft}`);  // 传感器右 + gap 7.82
+  assert.ok(Math.abs(l.bubbleRight - 117.425) < 0.01, `bubbleRight ${l.bubbleRight}`);
+  assert.ok(Math.abs(l.bubbleWidth - 62.18) < 0.01, `bubbleWidth ${l.bubbleWidth}`);
+  assert.ok(Math.abs((l.bubbleRight - l.left) - 245.77) < 0.01, 'span 应小于 maxSpan 290');
+  // trailing 内容再宽，副胶囊也不跟着长：上游实测 "7" 与 "12:45" 都是 62.18
+  const wide = splitLayout({ ...emptyMeasure(), split: { attached: { leading: 22, trailing: 38 }, detached: { leading: 22, trailing: 60 } } });
+  assert.ok(Math.abs(wide.bubbleWidth - 62.18) < 0.01, `副胶囊被内容撑大了：${wide.bubbleWidth}`);
+});
+
+check('split：副胶囊 trailing 只剩 20.5pt，倒计时放不进去（设计文档 §4.3）', () => {
+  const { bubbleTrailing } = loadIsland().internals;
+  const ring = bubbleTrailing({ leading: 22, trailing: 20 }, 62.18);
+  assert.ok(Math.abs(ring.room - 20.5) < 0.01, `room ${ring.room}`);
+  assert.equal(ring.width, 20, '20pt 的 ring 恰好不被裁');
+  const digits = bubbleTrailing({ leading: 22, trailing: 38 }, 62.18);
+  assert.ok(Math.abs(digits.width - 20.5) < 0.01, `"24:58" 被裁到只剩 room：${digits.width}`);
+  assert.ok(digits.width < 38, '数字必须被裁，所以倒计时不能进副胶囊');
+  assert.ok(Math.abs(digits.fromRight - 17.425) < 0.01, `中心位置 ${digits.fromRight}`);
+});
+
+check('split 超过 maxSpan 时退回 minimal；没有 split 内容时也退回', () => {
+  const { splitLayout } = loadIsland().internals;
+  assert.equal(splitLayout({ ...emptyMeasure(), split: { attached: { leading: 72, trailing: 72 }, detached: { leading: 72, trailing: 72 } } }), null);
+  assert.equal(splitLayout(emptyMeasure()), null);
+});
+
+check('shapeTarget 四态的尺寸与顶部偏移', () => {
+  const { shapeTarget, METRICS } = loadIsland().internals;
+  const idle = shapeTarget('idle', emptyMeasure(), 402);
+  assert.deepEqual([idle.left, idle.right, idle.height, idle.radius], [-47.425, 47.425, 36.84, 18.42]);
+  assert.equal(idle.top, 13.91);
+  assert.equal(idle.bubbleHeight, 0);
+  const compact = shapeTarget('compact', emptyMeasure(22, 20), 402);
+  assert.ok(Math.abs((compact.right - compact.left) - 151.1) < 0.01, `compact 宽 ${compact.right - compact.left}`);
+  assert.equal(compact.height, METRICS.compact.height);
+  // 宽屏不拉伸：岛始终按手机宽度排
+  for (const screen of [402, 1440, 2560]) {
+    const wide = shapeTarget('expanded', { ...emptyMeasure(), expandedHeight: 40 }, screen);
+    assert.ok(Math.abs((wide.right - wide.left) - 374.34) < 0.01, `${screen} 屏展开宽 ${wide.right - wide.left}`);
+  }
+  const height = content => shapeTarget('expanded', { ...emptyMeasure(), expandedHeight: content }, 402).height;
+  assert.equal(height(40), 84);            // minHeight 兜住
+  assert.ok(Math.abs(height(70) - 106.53) < 0.01, `70 -> ${height(70)}`);
+  assert.ok(Math.abs(height(120) - 156.53) < 0.01, `120 -> ${height(120)}`);
+  assert.equal(height(200), 180);          // maxHeight 兜住
+  assert.equal(shapeTarget('expanded', { ...emptyMeasure(), expandedHeight: 70 }, 402).radius, 47.9);
+  const minimal = shapeTarget('minimal', { ...emptyMeasure(), split: { attached: { leading: 22, trailing: 38 }, detached: { leading: 22, trailing: 20 } } }, 402);
+  assert.equal(minimal.bubbleHeight, METRICS.minimal.height);
+  assert.ok(minimal.bubbleRight > minimal.right, '副胶囊必须在主胶囊右边');
+});
+
+check('shapeTransition 选择矩阵与上游一致', () => {
+  const { shapeTransition } = loadIsland().internals;
+  const o = { swap: false, swelling: false, alert: false };
+  assert.equal(shapeTransition('compact', 'compact', o), 'resize');
+  assert.equal(shapeTransition('idle', 'expanded', o), 'appearExpand');
+  assert.equal(shapeTransition('minimal', 'expanded', o), 'swap');
+  assert.equal(shapeTransition('compact', 'expanded', { ...o, swelling: true }), 'pressExpand');
+  assert.equal(shapeTransition('compact', 'expanded', { ...o, swap: true }), 'swap');
+  assert.equal(shapeTransition('compact', 'expanded', o), 'expand');
+  assert.equal(shapeTransition('expanded', 'minimal', o), 'collapseSplit');
+  assert.equal(shapeTransition('expanded', 'idle', o), 'dismiss');
+  assert.equal(shapeTransition('expanded', 'compact', { ...o, alert: true }), 'alertCollapse');
+  assert.equal(shapeTransition('expanded', 'compact', o), 'collapse');
+  assert.equal(shapeTransition('idle', 'compact', o), 'appear');
+  assert.equal(shapeTransition('compact', 'minimal', o), 'split');
+  assert.equal(shapeTransition('minimal', 'compact', o), 'unsplit');
+  // 每条选出来的名字都必须在三张弹簧表里存在，否则会取到 undefined 弹簧
+  const { MOTION } = loadIsland().internals;
+  for (const name of shapeTransitionsIn(MOTION)) {
+    assert.ok(MOTION.shape[name] && MOTION.body[name] && MOTION.corner[name], `${name} 缺弹簧`);
+  }
+});
+
+function shapeTransitionsIn(MOTION) {
+  const froms = ['idle', 'compact', 'minimal', 'expanded'];
+  const flags = [{}, { swap: true }, { swelling: true }, { alert: true }];
+  const names = new Set();
+  for (const a of froms) for (const b of froms) for (const f of flags) {
+    names.add(loadIsland().internals.shapeTransition(a, b, { swap: false, swelling: false, alert: false, ...f }));
+  }
+  return [...names];
+}
+
 check('参考源与上游许可随仓库发布', () => {
   for (const f of ['spring.ts', 'path.ts', 'geometry.ts', 'metrics.ts', 'store.ts', 'README.md', 'motion-subset.ts', 'LICENSE']) {
     assert.ok(existsSync(resolve(ROOT, REF, f)), `missing ${REF}/${f}`);
