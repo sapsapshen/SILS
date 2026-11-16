@@ -1,0 +1,361 @@
+# 灵动岛（移植 islandcn 引擎）与专注计时 设计文档
+
+日期：2026-11-16
+状态：已批准，待实施计划
+作者：沈愐 / 阿步
+
+---
+
+## 1. 目标与范围
+
+把 [islandcn](https://github.com/opencoredev/islandcn) 的灵动岛**引擎数学**移植进 SILS，做成阅读视图里常驻的一条活动胶囊，并让它承载一个真正的新功能：**25 分钟专注计时 + 今日累计**。落地后部署到 `http://120.53.222.178:8899/`，代码推 GitHub。
+
+### 1.1 明确纳入
+
+- `assets/island.js`：零依赖 IIFE 引擎（活动栈 + 四态 + 闭式弹簧 + 连续圆角形变），暴露 `window.Island`
+- `assets/island.css`：岛内内容排版与 keyline 变量（几何不在 CSS）
+- `assets/focus.js`：专注会话状态机 + 今日累计存储 + 把两条活动喂给引擎
+- `assets/reading.js` 一行：在已算好的 percent 处广播 `purplebook:progress`
+- `index.html`：1 个 stylesheet、2 个 `defer` script、1 个挂载点
+- 三语 `island.*` 文案、MIT 署名、`scripts/test-island.cjs` 与其 CI 注册
+- 分裂"黏颈"（metaball bridge）作为最后一个独立里程碑
+
+### 1.2 明确排除（YAGNI）
+
+- 不引入 `package.json`、npm 依赖、React、Tailwind 或任何 JS 构建步骤
+- 不移植 islandcn 的 React 协调层（`surface.tsx` 2,297 行、`motion.ts` 2,302 行里的编排部分）、`devtools`、`/lab`、`/compare`、录制保真度脚本
+- 不做 showcase 页、不做练习运行/语言包加载/发表评论这三类额外活动（首版只有阅读相关两条）
+- 不动后端：`app.py`、CSP、缓存策略、账号与评论逻辑零改动
+- 不改正文、不改版块结构、不做视觉重设计
+
+### 1.3 关键取舍（已与用户确认）
+
+| 决策 | 结论 | 依据 |
+|---|---|---|
+| 岛承载什么 | 阅读专注岛：本章进度 + 专注倒计时 | 用户选择 |
+| 静止形态 | 阅读视图常驻本章进度；会话存在时自动分裂 | 用户选择 |
+| 计时语义 | 倒计时 + 今日累计记录 | 用户选择 |
+| 实现方式 | A：移植引擎数学为 vanilla，零依赖 | 用户选择；仓库无 JS 工具链，CSP `script-src 'self' 'wasm-unsafe-eval'` |
+| 启动入口 | `.reading-tools` 新增「专注计时」按钮，与现有「专注阅读」纯视觉开关互不绑定 | 现有 `reading.js:21-30` 只管 `body[data-focus]` |
+| 胶囊分配 | 倒计时占主胶囊，进度以 20pt ring 进副胶囊 | 与用户初稿相反，理由见 §4.3 |
+
+---
+
+## 2. 现状基线（实测，非估计）
+
+### 2.1 ms-cookbook 侧
+
+| 项目 | 实测值 | 取证 |
+|---|---|---|
+| JS 工具链 | 根目录无 `package.json`、无 `node_modules`；`scripts/*.mjs` 全部免依赖 | `ls`、`cat package.json` 失败 |
+| 前端形态 | 单 HTML + hash 路由；`assets/*.js` 是 IIFE 全局（`window.Motion` / `MSI18N` / `AssetLoader`） | `motion.js:96`、`i18n.js:139`、`asset-loader.js:34` |
+| CSP | `script-src 'self' 'wasm-unsafe-eval'`、`style-src 'self' 'unsafe-inline'` | `app.py:67-68` |
+| eager 脚本白名单 | `index.html` 只允许 3 个非 defer 脚本，其余必须 `defer` | `test-motion.cjs:202-204` |
+| 资源版本化 | `?v=<sha256 前 12 位>`，页面上的 `href/src` 与 JS 字符串数组里的路径两处盖章；先盖 scripts 再盖 pages | `scripts/version-assets.mjs` |
+| CI 注册强制 | 每个校验脚本必须同时出现在 workflow 的 `paths:` 与步骤里，否则判红 | `test-ci-coverage.cjs:173` |
+| 阅读进度源 | `measureArticle()` 缓存盒子，`updateProgress()` 纯算 `scrollY`（不读布局）；`reading.js:43-44` 在 180ms 去抖后取整并写 `#readingPercent` | `paper.js:479-492`、`reading.js:47-48` |
+| header | 高 86px、`position:relative`、`z-index:10`、**非 sticky**；阅读视图 `justify-content:space-between`，中央搜索框 `width:min(100%,440px); margin:0 auto` | `styles.css` `.app-header`、`reader-tools.css:12-15` |
+| 页面底色 | `--paper: #ffffff`、`--surface: #f5f1e6` | `styles.css:26-27` |
+| 事件总线惯例 | `purplebook:route`、`purplebook:session` | `paper.js:543`、`discussion.js:84` |
+| 本地化存储惯例 | `JSON.parse(localStorage.getItem(k))` + try/catch + `persist()`；隐私模式需探测 | `reading.js:6-10`、`exercise-store.js:53` |
+| 语言包 | `assets/locale/{zh,en,es}.js` 为手写维护，不由 `build-i18n.py` 生成 | `grep locale scripts/build-i18n.py` 无命中 |
+
+### 2.2 islandcn 侧（`opencoredev/islandcn` @ `0011a41`，MIT，© 2026 Leo）
+
+| 项目 | 实测值 | 取证 |
+|---|---|---|
+| 安装方式 | `npx shadcn@latest add https://islandcn.dev/r/island-core.json` | README |
+| 引擎规模 | 25 文件 9,613 行 TS/TSX（`motion.ts` 2,302、`surface.tsx` 2,297、`config.ts` 452、`store.ts` 436） | 解包 `r/island-core.json` |
+| 依赖 | 引擎需 React 19，不加 npm 包；内容套件 `island-content` 带 `@hugeicons/core-free-icons`、`@hugeicons/react` | registry JSON `dependencies` |
+| 关键几何 | idle 94.85×36.84 @top 13.91；compact 高 36.85、sensor 留空 94.85、slot 上限 72、maxWidth 260、balance 0.7475；split 副胶囊 62.18、gap 7.82、maxSpan 290；expanded 374.34 宽 / 84–180 高 / radius 47.9 / padding 18.18·18.5·17.81·18.35 / contentClip 34.4 | `lib/island/metrics.ts` |
+| 关键动效 | 弹簧为闭式解：`stiffness=(2π/response)²`、`damping=4π·dampingFraction/response`；`shape`/`body`/`corner` 各自一条弹簧，按 transition 取值；`alertHold 5.975`、`alertContentDelay 0.12`、`longPress 0.216`、`swell ×1.187`（response 0.803 / df 0.641）、`press.squish 0.09`、`reduced.duration 0.2` | `lib/island/spring.ts`、`motion.ts:14-52,66-98,1402-1482,1498-1547,1577` |
+| keyline | 宽 1.5、α 0.16、luma ≤0.04 满值、≥0.17 不画，中间按两点 (0.0706→0.328)、(0.1104→0.109) 对数插值 | `metrics.ts:250-285` |
+| 黏颈 | `bridge.handleSize 2.4`、`spread 0.3`、`maxGap 5`（模拟器在 4.6–4.9 断开） | `metrics.ts:204-219` |
+| API | `IslandApi{start,update,end,expand,collapse,activities,presentation}`；`ActivityOptions{id,label,priority,group,alert,onPress,compact,minimal,expanded}`；update 为深合并 | `lib/island/README.md`、SKILL.md §4 |
+
+---
+
+## 3. 架构
+
+四个单元，接口窄、可独立测试。核心边界一句话：**引擎不认识"专注"，专注模块不碰几何。**
+
+```
+assets/focus.js  ──(活动 + 内容规格)──▶  assets/island.js  ──▶  SVG path + DOM
+      ▲                                        │
+      │ purplebook:progress / MSI18N.on        │ 只读一份 metrics 表
+      │                                        ▼
+assets/reading.js ──1 行广播             assets/island.css（内容排版）
+```
+
+### 3.1 A 单元：引擎 `assets/island.js`
+
+四块内部分层，对外只有一个全局：
+
+| 层 | 移植来源 | 职责 |
+|---|---|---|
+| `spring` | `spring.ts` | `solveSpring(config,x0,v0,t)` 闭式解 + `AnimatedValue`（飞行中 retarget 保留速度，不打断成跳变） |
+| `outline` | `metrics.ts` + `path.ts` | 连续圆角（`corner.smoothing 0.72`）出 SVG `d`；四态尺寸与 compact `balance 0.7475` 两侧增长规则 |
+| `stack` | `store.ts` | 活动栈：同 id 再 `start` 即更新；`priority` 定主活动；`group` 内一次一条；alert 展开 5.975s 后回落；长按 0.216s 展开 |
+| `paint` | 替代 `surface.tsx` | 按固定内容词汇渲染 DOM；几何走 transform/opacity，内容 crossfade |
+
+对外契约（沿用上游签名，`ReactNode` 换成内容规格）：
+
+```js
+const h = Island.start({
+  id, label,                       // label 读屏念，也是胶囊的按钮名
+  priority = 0, group, alert = false, onPress,
+  compact:  { leading: spec, trailing: spec },
+  minimal:  { leading: spec, bubble: spec },
+  expanded: { leading: spec, center: spec, trailing: spec, bottom: spec }
+});
+h.update(partial);        // 深合并：{compact:{trailing}} 保留 leading
+h.end();
+Island.expand(id?); Island.collapse();
+Island.presentation;      // 'idle' | 'compact' | 'minimal' | 'expanded'
+Island.activities;        // 主活动在前
+Island.mount(rootEl, { backdrop: '#ffffff' });
+Island.enabled;           // 挂载点缺失时为 false，全站静默降级
+```
+
+内容词汇只有 7 个原子，这是"不做通用组件库"的边界，也是 1,100 行与 9,613 行的差别所在：
+
+| 原子 | 形如 | 用在 |
+|---|---|---|
+| `{glyph}` | 内联 SVG，22pt（compact）/18pt（expanded 标签行） | 进度书签、专注莲座 |
+| `{text}` | tabular-nums，slot ≤72 | `43%`、`24:58` |
+| `{ring}` | 20pt 圆环 | 副胶囊里的进度 |
+| `{bar}` | 底部线性条 | expanded 的本章进度 |
+| `{buttons}` | 2–3 个圆角按钮 | 暂停/继续、+5分、结束 |
+| `{label}` | 传感器旁的上下文标签，≤9 字 | 「专注计时」 |
+| `{time}` | 自走时钟，读引擎的同一个 clock | 倒计时（不每帧 `update`） |
+
+`glyph` 用本站已有的图标语言自绘（不装 `@hugeicons`），形似即可，尺寸按上游的 22/18pt 规则。
+
+### 3.2 保真度预算（逐档写明）
+
+**移植（常驻可见项）**
+
+- 全部 `islandMetrics` 数值
+- 10 条 transition 的 `shape`/`body`/`corner` 弹簧：appear `.483/.62`、expand `.517/.824`、pressExpand `.387/.792`、swap `.498/.829`、collapse `.479/.894`、alertCollapse `.535/.84`、split `.505/.815`、unsplit `.487/.794`、dismiss `.432/1.019`、resize `.5/.82`
+- alert（`alertContentDelay .12` → 展开 → `alertHold 5.975` → 回落）
+- 长按（`swellTime .22` / `longPress .216`、swell `×1.187`、点按 `squish .09`）
+- keyline 全式（本站 `--paper:#fff` luma≈1 ≥ `noneFrom .17`，实测算出 α=0，即浅色页不画带——保留代码路径以备深色与截图）
+- `content.follow`：槽位中心保持形状宽高的比例分数，缩放 `(wRatio×hRatio)^(follow/2)`，clamp `0.2–2.5`
+- expanded 两层 shadow（blur 30.76 主 + 81.03 尾、opacity 0.3533、offsetY 10.7/23.43）
+- reduced-motion：形状用 `reduced.duration 0.2` 无过冲，内容 crossfade 去 blur
+- 传感器遮罩（内容从镜头区下穿过时被遮住）
+
+**延后一个里程碑（只在 split↔unsplit 那 0.4–0.5s 出现）**
+
+- `skirt.ts` 的 metaball 黏颈（`handleSize 2.4` / `spread 0.3` / `maxGap 5`）。超预算则退化为副胶囊弹簧入场，并把偏差写进 §10；主活动与副胶囊的位置、尺寸、时序仍按实测值。
+
+**不移植**
+
+- shadow 的 alpha 抖动颗粒（`grain.levels .6`，需要逐像素噪声，收益只在截图对比里可见）
+- `devtools`、`/lab` 序列、`group.handoff 1.445 / window 6.014`（我们两条活动属于不同 group，恒并列，用不到交接）
+
+### 3.3 B 单元：`assets/island.css`
+
+只写内容排版（字号、ink 色阶、按钮、ring/bar 的描边）与两个变量 `--island-backdrop`、`--island-z`。几何量不进 CSS：形状由 JS 出 `path`。
+
+`motion.css` 的三档时长不适用岛——岛的时长是弹簧参数决定的连续量。本文件在头部注释里自证这一豁免（`motion.css:1-4` 要求"其他都得在这里自证"），并**只动 transform/opacity**，与动效层的硬约束一致。
+
+### 3.4 C 单元：`assets/focus.js`
+
+见 §4。
+
+### 3.5 D 单元：装配
+
+| 文件 | 改动 |
+|---|---|
+| `index.html` | `<link rel="stylesheet" href="assets/island.css?v=…">`；`<script defer src="assets/island.js?v=…">` 与 `<script defer src="assets/focus.js?v=…">`；`<div id="islandRoot"></div>` 紧随 `</header>`。脚本顺序：`island.js` 紧接现有 `reading.js` 之后、`focus.js` 再其后（两者都 `defer`，`focus.js` 初始化时 `window.Island` 必已就绪） |
+| `assets/locale/{zh,en,es}.js` | 新增 `island.*` 键：主副文案、四个按钮、alert 两句、今日累计、读屏 label |
+| `NOTICE` | 增一行 islandcn MIT 署名 + 上游 commit |
+| `docs/reference/islandcn/` | 移植所依据的 `metrics.ts`、`config.ts`、`spring.ts`、`path.ts`、`skirt.ts`、`geometry.ts`、`README.md` 与 MIT `LICENSE`，每个魔法数可溯源 |
+| `scripts/test-island.cjs` | 见 §7 |
+| `.github/workflows/deploy-modelscope.yml` | `paths:` 加 `scripts/test-island.cjs`，步骤加 `node scripts/test-island.cjs` |
+| `scripts/version-assets.mjs` | 无需改动：`pages` 列表已含 `index.html`，新资源自动被盖章 |
+
+`login.html`、`404.html`、`analytics.html` 不装岛（登录页与 404 不在阅读视图，无活动可显示）。
+
+---
+
+## 4. 数据流
+
+### 4.1 进度来源（不新增滚动监听）
+
+`reading.js` 已经在 `scroll` 去抖 180ms、`hashchange`、`pagehide` 三条路径上算出同一个整数 percent，只需在写完 `#readingPercent` 后广播一次：
+
+```js
+// assets/reading.js:44 之后
+document.dispatchEvent(new CustomEvent('purplebook:progress',
+  { detail: { chapter: chapter.id, percent } }));
+```
+
+选择该接缝的理由：去抖已完成（≤约 5 次/秒），不动 `paper.js` 的 rAF/布局预算，且与 `purplebook:route`/`purplebook:session` 同构。
+
+### 4.2 两条活动
+
+| | `reading-progress` | `focus-timer` |
+|---|---|---|
+| group / priority | `reading` / 0 | `focus` / 1 |
+| 存在条件 | 阅读视图（含暂停中的会话） | 会话存在（`running`/`paused`） |
+| compact | `glyph:book` + `text:'43%'` | `glyph:lotus` + `time:'24:58'` |
+| minimal | `glyph:book` + `bubble:ring(0.43)`（副胶囊只剩约 20pt，ring 是唯一稳过的形） | 只给 `glyph:lotus`，不给 `trailing`：`"24:58"` 超出副胶囊约 20pt 的余量，分裂时它留在主胶囊，`minimal` 只是超 `maxSpan` 时的降级 |
+| expanded | 章节标题 + 本章 `bar` + 今日累计 | 剩余时间大字 + 累计 + 三个按钮 |
+| 更新时机 | `purplebook:progress` | 引擎的 `{time}` 自走，仅阶段切换时 `update` |
+
+会话在跑时 `presentation === 'minimal'`（分裂）：priority 1 的倒计时占主胶囊，progress 进副胶囊。
+
+### 4.3 为什么和最初的草图相反
+
+用户草图为 `[🔖 43%] ●[🧘 24:58]`。上游实测副胶囊固定 62.18 宽、22pt 图标之后只剩约 20pt，其文档把 `"4:31"`、`"18 min"` 明确列为**放不下**（超出即省略号或需 bubble 化），而 20pt 的 ring 与 `"43%"` 恰好合适。因此把"需要看数字的"倒计时留在主胶囊、把"一眼看趋势的"进度换成 ring 进副胶囊——语义不变，分配受测量约束。
+
+### 4.4 会话状态机
+
+```
+none ──点「专注计时」/岛上按钮──▶ running(target=25min)
+running ──暂停──▶ paused ──继续──▶ running
+running ──remaining<=0──▶ complete ──alert 5.975s 后──▶ end ──▶ none（记 1 次会话）
+running/paused ──结束──▶ ended ──alert「本次 25:10」──▶ end ──▶ none（记实际时长）
+running/paused ──+5分──▶ running(remaining+=300s)
+```
+
+墙钟规则（`setTimeout` 在后台标签页被限流到约 1 次/秒，累加 tick 必然漂移）：
+
+```js
+remaining = clamp(target - (Date.now() - startedAt) - accumulatedMs, 0, target)
+```
+
+- `running` 存 `{startedAt, accumulatedMs, target}`；每次 `paused→running` 把这段并入 `accumulatedMs`
+- 时钟回拨（改系统时间、时区异常）：`now < startedAt` 判为新会话；`remaining` 恒被 clamp 到 `[0, target]`，绝不倒扣成负
+- 刷新与重进阅读页：从存储里的 `active` 恢复并按墙钟重算
+- 离开阅读视图：会话继续跑（它是计时器，不属于某个视图），岛整体隐藏；回来时按当前状态重绘
+- 到点提醒走 `alert:true`（引擎自动展开、5.975s 后回落），约 7s 后 `h.end()`
+
+### 4.5 存储
+
+单一键 `ms-cookbook-focus`，读写用 `reading.js:6-10` 的 try/catch + `persist()` 模式，并按 `exercise-store.js:53` 的思路探测可写性：
+
+```js
+{
+  date: '2026-11-16',          // 本地日；不等于今天则 totalMs/sessions 归零
+  totalMs: 4_800_000,
+  sessions: [{ endedAt, ms }], // 上限 30 条，防无界增长
+  active: null | { startedAt, accumulatedMs, target, paused }
+}
+```
+
+- 任何字段类型不符（手改/截断）→ 整体回退默认值，不抛
+- 监听 `storage` 事件重读，避免多标签页互相覆盖累计
+- 不可写（隐私模式）→ 会话照跑、累计不写、岛不报错
+
+### 4.6 语言切换
+
+`MSI18N.on` 里重绘两条活动的文案与数字格式（同 `paper.js:569` 的重渲染惯例）；`{time}` 用 `toLocaleTimeString` 的秒级短形，locale 取 `MSI18N.locale()`。
+
+---
+
+## 5. 视觉、无障碍与降级
+
+| 议题 | 决定 |
+|---|---|
+| 位置 | `position:fixed`，`top:13.91px`，视口水平居中，`z-index:60`（header 是 10） |
+| 尺寸 | 按上游规则锁定手机尺寸：宽屏不拉伸，expanded 恒 374.34 |
+| 与搜索框重叠 | 阅读视图 header 正中是 `min(100%,440px)` 的搜索框，滚到顶部时 compact（约 150×37）压住中间一段。取舍：**不移除控件、不动布局（0 CLS）**；容器 `pointer-events:none`、胶囊 `pointer-events:auto`；键盘路径 ⌘K / Ctrl K 已存在（`paper.js:257-258`）；`top` 是表里的一个数，评审后若嫌碍眼，改这一个数即可整体挪到 header 下方 |
+| 收合 | 点岛外、`Escape`、或再按岛上按钮 |
+| keyline | 由 `Island.mount({backdrop:'#ffffff'})` 按实测 luma 计算，浅色页得 α=0，即不画 |
+| reduced-motion | 一次 `matchMedia` 判定：弹簧无过冲（`reduced.duration 0.2`）、内容 crossfade 无 blur；`{time}` 仍走秒但不做翻字动画 |
+| 读屏 | 每条活动的 `label` 即按钮名（例："本章阅读进度 43%"、"专注剩余 24 分 58 秒"）；胶囊本身是可聚焦 `button`，`aria-expanded` 反映是否展开；alert 时用 `role="status"` 的 live region 播报一次 |
+| 键盘 | Tab 可聚焦胶囊，Enter 展开、Escape 收合、展开态下按钮可 Tab 到达 |
+| 打印 | `@media print { #islandRoot { display: none } }` |
+| 降级 | 挂载点/`#readingProgress` 缺失或内容词汇不认识 → `console.warn` 一次 + `Island.enabled=false`，正文阅读路径完全不受影响 |
+
+---
+
+## 6. 错误处理（只在边界设防）
+
+| 边界 | 行为 |
+|---|---|
+| `localStorage` 不可读/不可写 | 视为空状态；会话仍可用，累计不写 |
+| 存储内容损坏或类型漂移 | 校验后整体回退默认，不逐字段猜 |
+| 系统时钟回拨 | `remaining` clamp `[0, target]`；`now < startedAt` 当新会话 |
+| 引擎缺挂载点 / 词汇不认识 | 警告一次并整体停用岛，不抛异常 |
+| `IntersectionObserver` / View Transitions 缺失 | 已由 `motion.js` 兜底，岛不重复判断 |
+| 两标签页并发 | `storage` 事件重读累计；`active` 以最后写入为准（可接受的弱一致） |
+
+---
+
+## 7. 测试
+
+### 7.1 `scripts/test-island.cjs`（纯 Node，仿 `test-exercise-*` 的 `node:vm` + 最小 DOM 桩）
+
+1. `solveSpring` 对已知解析值：`response .483 / df .62` 在若干 `t` 上的位移，以及 `df>1`（dismiss 1.019）不发散
+2. `AnimatedValue` 飞行中 retarget 保留速度（展开被打断成收合无跳变）
+3. `outline` 产出尺寸：idle 94.85×36.84、compact 两侧 ≤72 与 `balance .7475` 的短边增长、split 主胶囊 + 7.82 gap + 副胶囊 62.18、expanded 374.34 与 contentClip 34.4
+4. `maxSpan 290` 超限退回 minimal 的分支
+5. 活动栈：同 id 再 start 即更新、`priority` 选主、`group` 内一次一条、深合并只覆盖给定槽
+6. alert 时序：`alertContentDelay .12` → 展开 → `alertHold 5.975` → 回落
+7. 长按阈值 `0.216`；点按走 `squish .09` 不展开
+8. reduced-motion 分支无过冲、无 blur
+9. 墙钟倒计时：前进/回拨/跨日的 `remaining` 断言
+10. 存储 schema：损坏 JSON、错类型、跨日归零、`sessions` 截到 30
+
+### 7.2 源码契约断言（仿 `test-motion.cjs`）
+
+- `index.html` 里两个岛脚本必须带 `defer`，且 eager 三脚本白名单未被破坏
+- 三语 locale 的 `island.*` 键集合完全一致
+- `NOTICE` 含 islandcn MIT 行与上游 commit
+- `ISLAND_METRICS` 的 6 个关键常数（idle 宽、compact balance、副胶囊 62.18、expanded 374.34/84/180）与本文档一致，防漂移
+- `app.py` 与 `requirements.txt` 未被改动
+
+### 7.3 浏览器实测（本地起 uvicorn，`?参数=1` 强制整页重载）
+
+进章节看 compact 进度 → 点「专注计时」看分裂 → 暂停/继续/+5 → 快进到 00:00 看 alert 与回落 → 刷新恢复 → 切 en/es 看文案 → 开 `prefers-reduced-motion` 看无过冲 → Chrome performance trace 确认只动 transform/opacity、无 ForcedReflow 增长（40 万字文档上的硬指标）→ Ctrl+P 预览确认打印隐藏。
+
+### 7.4 回归
+
+```bash
+PYTHONUTF8=1 .venv/Scripts/python.exe -m pytest tests -q
+for f in scripts/test-*.cjs; do node "$f"; done
+node scripts/check-site.mjs
+node scripts/version-assets.mjs
+```
+
+---
+
+## 8. 部署与回滚
+
+线上现状（8 天前记录，须复核）：`/data/ms-cookbook` + PM2 应用 `ms-cookbook` 监听 `0.0.0.0:8899`，公网 `http://120.53.222.178:8899`；账号库是独立 PostgreSQL 容器，正文/评论/进度仍在 SQLite。`deploy/README.md` 写的是"正式域名 + HTTPS + 回环端口"的**目标态**，与实际 pm2@8899 明文入口不一致——本次沿用已验证的 pm2 流程，不动 TLS。
+
+顺序：
+
+1. `git pull` 前先在服务器 `tar -czf backups/source-before-island-<时间戳>.tar.gz` 备份源码
+2. 按哈希差异清单 tar 同步本次改动的文件；**跳过服务器独占**：`ecosystem.config.js`、`run.sh`、`index.html.bak.*`
+3. 服务器跑 pytest + node 两套测试
+4. `pm2 restart ms-cookbook --update-env`
+5. 用 **GET**（HEAD 不触发 gzip）核对 `assets/island.js`/`island.css` 的 `Content-Encoding` 与 `Cache-Control: immutable`
+6. 浏览器打开 `http://120.53.222.178:8899/?v=1#chapter-1` 实测上述 7.3 的关键 5 步
+7. 回滚：解回 `backups/source-before-island-*.tar.gz` + `pm2 restart`
+
+推送：`scripts/version-assets.mjs` 重打 `?v=` 后提交（作者 shenmian），走 gh 已登录凭据的一次性 HTTPS URL 推 `main`（本机 22 端口被代理屏蔽），`git ls-remote` 验证远端一致。用户已在原始指令中明确要求推送，实测通过后直接推，不再单独等令。
+
+---
+
+## 9. 许可与署名
+
+- islandcn：MIT License, Copyright (c) 2026 Leo。本设计的 `assets/island.js` 是其**衍生移植**，因此：`docs/reference/islandcn/LICENSE` 保留原文；`NOTICE` 增列该组件与"已移植/已修改"的说明（符合 NOTICE 现有"说明你改了什么"的要求）；移植文件头部注释指向参考源与 commit。
+- 上游明确声明其"仿的是外观与动效，不含任何 Apple 资产"，本项目同样不使用 Apple 素材；`Dynamic Island` 为 Apple 商标，文案里不作为产品名使用。
+- 不引入 `@hugeicons`（其图标为 Hugeicons 免费集 MIT），本站字形自绘，避免署名与体积成本。
+
+---
+
+## 10. 已知偏差与后续
+
+| 偏差 | 影响 | 后续 |
+|---|---|---|
+| 黏颈（metaball bridge）可能延后 | 分裂/合流那 0.4s 少一次"拉丝"观感 | 独立里程碑，`skirt.ts` 为纯几何，可后补 |
+| 内容词汇只有 7 个原子，不是任意 ReactNode | 岛内不能塞自定义组件 | 新增原子按需扩，不改引擎 |
+| 只在阅读视图出现 | 首页/目录/练习页无岛 | 若要把语言包/练习包加载也接进来，只需在对应模块再发 `start()` |
+| `active` 会话多标签页弱一致 | 两个 tab 同开会话互相覆盖最后写入 | 需要时可加 `BroadcastChannel` 单实例化 |
+| 专注时长硬编码 25 分钟 | 无自定义目标 | `+5分` 已覆盖最常见需求，先不做设置面板 |
