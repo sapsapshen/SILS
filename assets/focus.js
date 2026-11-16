@@ -271,6 +271,93 @@
     return FocusTimer;
   }
 
+  // ---- 进度活动 ----
+  const PROGRESS_ID = 'reading-progress';
+  let progressSeen = false;
+  let progressTitle = '';
+  let lastProgress = null;
+
+  function chapterTitleFor(id) {
+    const list = (typeof window !== 'undefined' && window.BOOK_DATA && window.BOOK_DATA.chapters) || [];
+    const found = list.find(c => c.id === id);
+    return found ? found.title : '';
+  }
+
+  // 阅读进度：常驻阅读视图的那一条。数字来自 reading.js 的去抖广播，这里绝不
+  // 自己再监听 scroll——那等于在 40 万字的正文上多算一遍布局。
+  function progressFrom(detail) {
+    if (!island || !detail) return;
+    lastProgress = detail;
+    if (typeof document !== 'undefined' && document.body && document.body.dataset.view !== 'reader') return;
+    const value = clamp(Math.round(detail.percent || 0), 0, 100);
+    if (detail.chapter) progressTitle = chapterTitleFor(detail.chapter);
+    const spec = {
+      id: PROGRESS_ID,
+      group: 'reading',
+      priority: 0,
+      label: t('island.readingLabel', { percent: value }),
+      compact: { leading: { glyph: 'bookmark' }, trailing: { text: `${value}%` } },
+      // 副胶囊只剩约 20pt：这里放 20pt 的环，不放字。
+      minimal: { leading: { glyph: 'bookmark' }, bubble: { ring: value / 100 } },
+      expanded: {
+        leading: { label: t('island.reading') },
+        center: { title: progressTitle, subtitle: t('island.chapterProgress') },
+        bottom: { bar: value / 100 }
+      }
+    };
+    if (progressSeen) island.update(PROGRESS_ID, spec);
+    else { island.start(spec); progressSeen = true; }
+  }
+
+  // 语言切换后把两条活动的文案重念一遍：内容没变，只是换了张字。
+  function refreshText() {
+    rollover();
+    if (phase === 'running' || phase === 'paused') show(spec());
+    if (progressSeen && lastProgress) progressFrom(lastProgress);
+  }
+
+  // ---- 浏览器装配 ----
+  // node 单测里这段根本不执行：init 注入的桩就是全部依赖。
+  function boot() {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+    if (!window.Island || !document.getElementById) return;
+    const root = document.getElementById('islandRoot');
+    if (!root) return;
+    let store = null;
+    try { store = window.localStorage; } catch { store = null; }
+    const i18n = window.MSI18N || null;
+    init({
+      storage: store,
+      island: window.Island,
+      t: i18n ? (key, vars) => i18n.t(key, vars) : (key => key),
+      locale: i18n ? () => i18n.locale() : () => 'zh-CN'
+    });
+    window.Island.mount(root, {});
+    restore();
+    document.addEventListener('purplebook:progress', event => progressFrom(event.detail));
+    if (i18n) i18n.on(refreshText);
+    window.addEventListener('storage', event => {
+      if (event.key === TODAY_KEY && event.newValue) onExternalWrite(event.newValue);
+    });
+    window.Island.internals.onFrame(() => tick());
+    const button = document.getElementById('focusTimerButton');
+    if (!button) return;
+    const sync = () => {
+      const snap = snapshot();
+      document.body.dataset.focusTimer = snap.phase === 'none' ? '' : snap.phase;
+      button.setAttribute('aria-pressed', String(snap.phase === 'running'));
+    };
+    button.addEventListener('click', () => {
+      const snap = snapshot();
+      if (snap.phase === 'none') start(DEFAULT_TARGET_MS);
+      else if (snap.phase === 'paused') resume();
+      else pause();
+      sync();
+    });
+    window.Island.internals.onFrame(sync);
+    sync();
+  }
+
   const FocusTimer = {
     TODAY_KEY,
     DEFAULT_TARGET_MS,
@@ -283,7 +370,10 @@
     tick: () => { if (ready) tick(); },
     restore: () => { if (ready) restore(); },
     onExternalWrite,
+    progressFrom,
+    refreshText,
     snapshot: () => (ready ? snapshot() : { phase: 'none', remainingMs: 0, targetMs: 0, todayMs: 0 })
   };
   window.FocusTimer = FocusTimer;
+  boot();
 })();

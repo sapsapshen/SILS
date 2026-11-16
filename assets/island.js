@@ -517,6 +517,7 @@
   let clockNow = () => (typeof performance === 'undefined' ? Date.now() / 1000 : performance.now() / 1000);
   let render = () => {};
   const timers = [];                                  // {at, fn}，Task 7 的 alert 与长按用
+  const frameSubscribers = [];                        // 每帧回调（见 onFrame）
   const bySort = (a, b) => b.priority - a.priority || a.order - b.order;
   const find = id => state.activities.find(a => a.id === id);
   const commit = () => { syncShape(); render(); };
@@ -808,7 +809,8 @@
   };
 
   function buildDom(root, backdrop) {
-    const island = el('div', 'island', { role: 'group' });
+    // 容器本身不带语义：胶囊是唯一的具名控件，形状与传感器对读屏隐藏。
+    const island = el('div', 'island');
     node.region = island;
     node.shape = svgEl('svg', 'island-shape', { 'aria-hidden': 'true' });
     node.shape.appendChild(svgEl('title')).textContent = '灵动岛';
@@ -1021,6 +1023,8 @@
     }
     if (pressKind === 'hold' && !state.expanded && now - pressAt >= MOTION.longPress) expand();
     for (const key of SHAPE_KEYS) shapeValues[key].step(dt);
+    // 每帧通知订阅者：专注计时用它自走倒计时，避免每秒几十次 update 调用。
+    for (const fn of frameSubscribers) fn(now);
     if (mounted && !headless) render();
   };
 
@@ -1044,6 +1048,7 @@
   const noop = () => {};
   let reducedMotion = false;
   let mounted = false;                    // mount 之前所有公开方法都必须惰性
+  let loopRunning = false;                // 真 DOM 下的 rAF 循环只起一次
   let headless = true;                    // 有没有真 DOM 可画
   const deadHandle = { id: '', update: noop, end: noop };
 
@@ -1067,6 +1072,12 @@
         buildDom(root, backdrop || '#ffffff');
       }
       render = headless ? noop : scheduleFrame;
+      // 有真 DOM 才自己起帧循环；无 DOM 的单测手动驱动 tick。
+      if (!headless && typeof requestAnimationFrame === 'function' && !loopRunning) {
+        loopRunning = true;
+        const frame = () => { tick(clockNow()); if (loopRunning) requestAnimationFrame(frame); };
+        requestAnimationFrame(frame);
+      }
       commit();
     },
     start: options => (mounted ? start(options) : deadHandle),
@@ -1084,6 +1095,13 @@
       scene: () => deriveScene(state),
       allActivities: () => state.activities.slice(),
       tick, currentGeometry, outsidePress, keyEscape,
+      onFrame: fn => {
+        frameSubscribers.push(fn);
+        return () => {
+          const index = frameSubscribers.indexOf(fn);
+          if (index >= 0) frameSubscribers.splice(index, 1);
+        };
+      },
       setClock: fn => { clockNow = fn; },
       setReducedMotion: value => { reducedMotion = !!value; },
       isReduced: () => reducedMotion

@@ -1054,6 +1054,98 @@ check('storage 事件让另一个标签页的累计可见', () => {
   assert.equal(rig.F.snapshot().todayMs, 25 * MINUTE + 10 * MINUTE);
 });
 
+check('reading.js 在算好 percent 处广播进度事件', () => {
+  const js = read('assets/reading.js');
+  assert.match(js, /purplebook:progress/);
+  assert.ok(js.indexOf("$('#readingPercent').textContent") < js.indexOf('purplebook:progress'),
+    '广播必须在 percent 已经算出之后，否则岛要自己再测一遍');
+  assert.equal((js.match(/purplebook:progress/g) || []).length, 1, '只允许一个广播点');
+});
+
+check('阅读工具条里有「专注计时」按钮，且与视觉专注分开', () => {
+  const html = read('index.html');
+  const tools = html.match(/<div class="reading-tools"[\s\S]*?<\/div>/)[0];
+  assert.match(tools, /id="focusTimerButton"/);
+  assert.match(tools, /data-i18n="reader\.focusTimer"/);
+  assert.match(tools, /aria-pressed="false"/);
+  assert.ok(tools.indexOf('id="focusReading"') < tools.indexOf('id="focusTimerButton"'),
+    '两个开关并排，但必须是两个 id');
+  assert.match(html, /<script defer src="assets\/focus\.js\?v=[0-9a-f]{12}"><\/script>/);
+});
+
+check('focus.js 不接管视觉专注模式', () => {
+  const js = read('assets/focus.js');
+  assert.ok(!/body\.dataset\.focus\s*=/.test(js), 'focus.js 写 body.dataset.focus 会抢掉「专注阅读」开关');
+  assert.match(js, /body\.dataset\.focusTimer\s*=/);
+});
+
+check('三语 island.* 键集合完全一致', () => {
+  const keysOf = file => [...read(file).matchAll(/'(island\.[A-Za-z0-9_]+)'\s*:/g)].map(m => m[1]);
+  const zh = new Set(keysOf('assets/locale/zh.js'));
+  assert.ok(zh.size >= 14, `zh 只有 ${zh.size} 个 island 键`);
+  for (const file of ['assets/locale/en.js', 'assets/locale/es.js']) {
+    const other = new Set(keysOf(file));
+    for (const key of zh) assert.ok(other.has(key), `${key} 在 ${file} 里缺失`);
+    for (const key of other) assert.ok(zh.has(key), `${key} 只存在于 ${file}`);
+  }
+  for (const file of ['assets/locale/zh.js', 'assets/locale/en.js', 'assets/locale/es.js']) {
+    assert.match(read(file), /'reader\.focusTimer'\s*:/, `${file} 缺 reader.focusTimer`);
+  }
+});
+
+check('占位符三语齐备：文案里用的变量必须真的传得进去', () => {
+  const files = ['assets/locale/zh.js', 'assets/locale/en.js', 'assets/locale/es.js'];
+  const varsOf = (text, key) => {
+    const line = text.match(new RegExp(`'${key}':\\s*'([^']*)'`));
+    assert.ok(line, `${key} 不在 ${text.slice(0, 40)}…`);
+    return [...line[1].matchAll(/\{(\w+)\}/g)].map(m => m[1]).sort();
+  };
+  for (const key of ['island.readingLabel', 'island.focusLabel', 'island.today', 'island.doneBody', 'island.stoppedBody']) {
+    const expected = varsOf(read(files[0]), key);
+    files.forEach(file => assert.deepEqual(varsOf(read(file), key), expected, `${key} 的占位符在 ${file} 里不一致`));
+  }
+  const focus = read('assets/focus.js');
+  assert.match(focus, /t\('island\.doneBody',\s*\{\s*time[^}]*today[^}]*\}\)/, 'doneBody 需要 time 与 today 两个变量');
+});
+
+check('岛缺席时专注会话仍能跑：boot 早退，不抛', () => {
+  const sandbox = { window: {}, console };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  // 没有 document：boot() 必须直接返回
+  vm.runInContext(read('assets/focus.js'), sandbox, { filename: 'assets/focus.js' });
+  assert.ok(sandbox.window.FocusTimer, '没有页面也不该挡住模块加载');
+  sandbox.window.FocusTimer.init({ storage: null, island: null, t: k => k });
+  sandbox.window.FocusTimer.start(25 * MINUTE);
+  assert.equal(sandbox.window.FocusTimer.snapshot().phase, 'running');
+});
+
+check('进度活动注册为 reading/0，数字直接上屏', () => {
+  const rig = focusRig();
+  rig.F.progressFrom({ percent: 43, chapter: 'chapter-7' });
+  const start = rig.findCall('start', 'reading-progress');
+  assert.ok(start, '没有注册 reading-progress 活动');
+  assert.equal(start[2].group, 'reading');
+  assert.equal(start[2].priority, 0, '倒计时才是主活动，进度进副胶囊');
+  assert.equal(start[2].compact.trailing.text, '43%');
+  assert.equal(start[2].minimal.bubble.ring, 0.43, '副胶囊用环而不是字');
+  rig.F.progressFrom({ percent: 47, chapter: 'chapter-7' });
+  const update = rig.calls.filter(c => c[0] === 'update' && c[1] === 'reading-progress');
+  assert.equal(update.length, 1, '第二次必须是 update 而不是重复 start');
+  assert.equal(update[0][2].compact.trailing.text, '47%');
+});
+
+check('语言切换重发两条活动的文案', () => {
+  const rig = focusRig();
+  rig.F.progressFrom({ percent: 30, chapter: 'chapter-7' });
+  rig.F.start(25 * MINUTE);
+  const before = rig.calls.length;
+  rig.F.refreshText();
+  assert.ok(rig.calls.length > before, '切语言后必须把文案重新送进岛里');
+  const focusUpdate = rig.calls.slice(before).filter(c => c[1] === 'focus-timer');
+  assert.ok(focusUpdate.length >= 1, '倒计时活动的文案没重发');
+});
+
 check('参考源与上游许可随仓库发布', () => {
   for (const f of ['spring.ts', 'path.ts', 'geometry.ts', 'metrics.ts', 'store.ts', 'README.md', 'motion-subset.ts', 'LICENSE']) {
     assert.ok(existsSync(resolve(ROOT, REF, f)), `missing ${REF}/${f}`);
