@@ -63,6 +63,7 @@ const REQUIRED = [
   'scripts/test-i18n.cjs',
   'scripts/test-asset-loading.cjs',
   'scripts/test-motion.cjs',
+  'scripts/test-island.cjs',
   'scripts/test-reader-copy.cjs',
   'scripts/test-book-search.cjs',
   'scripts/test-reader-routes.cjs',

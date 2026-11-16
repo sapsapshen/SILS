@@ -21,3 +21,27 @@ If you reuse, repackage or sell an adapted edition:
 Third-party components bundled with the site (KaTeX, Remix Icon, Noto Serif SC,
 Dada artwork) retain their own licences; see README.md and the ATTRIBUTION files
 under assets/.
+
+The Dynamic Island behaviour in assets/island.js is a port of islandcn:
+
+    https://github.com/opencoredev/islandcn
+    (commit 0011a41ea4882f3818caf35c98f3ee46b80c4a2c)
+    MIT License, copyright (c) 2026 Leo
+
+The ported math lives in spring.ts, path.ts, geometry.ts, metrics.ts, store.ts
+and a motion-constants excerpt under docs/reference/islandcn/, kept alongside
+this notice so every measured number stays traceable to its calibration note.
+
+Changes made in this port: the code is plain JavaScript with no React and no
+build step; the spring, continuous-corner path and layout rules are kept as
+upstream solved them; the activity stack keeps the upstream rules but drops the
+development tools, the group hand-off timers and the recorded-clip comparison;
+the renderer is a fixed DOM template for seven content atoms instead of
+arbitrary React nodes; glyphs are drawn for this site rather than taken from
+Hugeicons; the gooey split neck is deferred to its own milestone. See
+docs/superpowers/specs/2026-11-16-islandcn-dynamic-island-design.md section 10.
+
+islandcn copies the look and motion of Apple's island, and so does this port,
+but neither uses any Apple asset. Not affiliated with Apple; Dynamic Island is a
+trademark of Apple Inc. and is not used as this feature's name in reader-facing
+copy.

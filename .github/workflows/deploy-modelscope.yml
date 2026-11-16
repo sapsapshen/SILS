@@ -45,6 +45,7 @@ on:
       - 'scripts/test-i18n.cjs'
       - 'scripts/test-asset-loading.cjs'
       - 'scripts/test-motion.cjs'
+      - 'scripts/test-island.cjs'
       - 'scripts/test-reader-copy.cjs'
       - 'scripts/test-book-search.cjs'
       - 'scripts/test-reader-routes.cjs'
@@ -111,6 +112,16 @@ jobs:
           # asserts the contract at the source -- tokens, no layout-property
           # transitions, and reduced motion honoured in CSS and JS alike.
           node scripts/test-motion.cjs
+      - name: Verify the Dynamic Island port
+        run: |
+          # The island's numbers are calibrated against simulator recordings, so
+          # a mistyped constant does not throw -- it draws a pill that is 2 pt
+          # too narrow, or a corner that rounds a beat late, and nobody can see
+          # that a wrong number is wrong. This runs the ported spring, path and
+          # layout math in Node against the measured values, and pins the port's
+          # provenance: the vendored upstream sources, the MIT attribution, the
+          # three locales, and the deferred milestones.
+          node scripts/test-island.cjs
       - name: Verify reader-facing copy and retry behaviour
         run: |
           # A reader must never see "Failed to fetch" or a Python traceback in
