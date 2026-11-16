@@ -687,6 +687,10 @@ function mountWithDom(options) {
   const root = makeElement('div');
   const Island = loadIsland({
     document,
+    // 实测排在"本帧画完之后的下一个任务"；测试里让它同步跑完，这样
+    // measureNow/syncShape 这条真路径仍然被走到（桩的 offsetWidth 是 0，
+    // 尺寸仍由估算兜底）。
+    setTimeout: fn => { fn(); return 0; },
     getComputedStyle: () => ({ getPropertyValue: () => ' #ffffff ' }),
     matchMedia: () => ({ matches: false, addEventListener() {} })
   });
@@ -1196,6 +1200,7 @@ check('集成：专注活动经真渲染器显示 mm:ss，并随墙钟走', () =
     console,
     document: dom,
     Date: FakeDate,
+    setTimeout: fn => { fn(); return 0; },
     getComputedStyle: () => ({ getPropertyValue: () => ' #ffffff ' }),
     matchMedia: () => ({ matches: false, addEventListener() {} })
   };

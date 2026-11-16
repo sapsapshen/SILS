@@ -698,9 +698,23 @@
     detachedLeading: 0, detachedTrailing: 0,
     expandedHeight: 0
   };
-  let measurePending = false;
 
   const widthOf = slot => (slot && slot.children.length ? slot.offsetWidth : 0);
+  // 量尺寸不能放在帧循环里：paint 每帧都在写 DOM，下一帧开头再读就又是一次
+  // 强制同步布局（浏览器实测 14ms，仍是全站最大的一条）。改到"这一帧已经画完、
+  // 布局结果已经算好"的下一个任务里读，读的就是现成的，不再逼浏览器重排。
+  let measureQueued = false;
+  const scheduleMeasure = () => {
+    if (measureQueued || headless) return;
+    // 宿主没有定时器（vm 沙箱里的单测）就跳过实测：估算值本来也是 0 宽兜底。
+    if (typeof setTimeout !== 'function') return;
+    measureQueued = true;
+    setTimeout(() => {
+      measureQueued = false;
+      measureNow();
+      syncShape();
+    }, 0);
+  };
   // 只有当前看得见的那部分才更新：收起的节点 offsetHeight 是 0，读它会抹掉
   // 上一次量到的真实尺寸。
   const measureNow = () => {
@@ -989,8 +1003,8 @@
       fillSlot(node.expandedTrailing, p.trailing);
       fillSlot(node.expandedBottom, p.bottom);
     }
-    // 内容刚写完：量尺寸留到下一帧，别在这一帧读。
-    measurePending = true;
+    // 内容刚写完：量尺寸排到本帧画完之后，别在这一帧读。
+    scheduleMeasure();
     // 槽位的左右归属由 CSS 的 flex space-between 决定，这里不再按帧算位置。
   };
 
@@ -1068,12 +1082,6 @@
       timer.fn();
     }
     if (pressKind === 'hold' && !state.expanded && now - pressAt >= MOTION.longPress) expand();
-    // 上一帧写完的内容在这一帧量尺寸：此刻样式与布局是干净的，读它不打断重排。
-    if (measurePending) {
-      measurePending = false;
-      measureNow();
-      syncShape();
-    }
     for (const key of SHAPE_KEYS) shapeValues[key].step(dt);
     // 每帧通知订阅者：专注计时用它自走倒计时，避免每秒几十次 update 调用。
     for (const fn of frameSubscribers) fn(now);
