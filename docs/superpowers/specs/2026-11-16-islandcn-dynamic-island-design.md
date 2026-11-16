@@ -359,3 +359,45 @@ node scripts/version-assets.mjs
 | 只在阅读视图出现 | 首页/目录/练习页无岛 | 若要把语言包/练习包加载也接进来，只需在对应模块再发 `start()` |
 | `active` 会话多标签页弱一致 | 两个 tab 同开会话互相覆盖最后写入 | 需要时可加 `BroadcastChannel` 单实例化 |
 | 专注时长硬编码 25 分钟 | 无自定义目标 | `+5分` 已覆盖最常见需求，先不做设置面板 |
+
+---
+
+## 11. 实测记录（2026-11-16 本地实现后）
+
+### 11.1 单元与集成测试
+
+`node scripts/test-island.cjs` → **73 passed**。分组：常量表 6、弹簧 4、路径 5、布局 7、活动栈 10、时序 9、渲染 8、装配与三语契约 11、专注状态机 11、跨模块集成 1（其余为参考源/署名 2）。
+既有套件同时全绿：`test-motion` 23、`test-asset-loading` 14、`test-reader-copy` 9、`test-ci-coverage` 13、`check-site` PASS、`pytest tests` 176 passed。
+
+### 11.2 浏览器实测（`python3 -m http.server 4173` + Chrome DevTools Protocol，桌面 1280×900）
+
+| 项 | 实测 | 对照上游数值 |
+|---|---|---|
+| 静止胶囊 | `top 13.91`、`height 36.85`、宽 145.53（由槽位 offsetWidth 驱动） | `metrics.compact.height 36.85`、`top 13.91` ✓ |
+| 分裂 | 副胶囊 `width 62.18px @ left 55.24px`，主胶囊左缘 -123.34，总跨度 240.76 | `split.detached.width 62.18`、`minimal.gap 7.82`（47.425+7.82=55.245）、`maxSpan 290` 未超 ✓ |
+| 展开 | `374.34 × 106.53`，路径首段起笔 `M -104.782` | `expandedWidth 374.34`；`-187.17 + edgeEase(47.9,0.72,187.17).p(82.388) = -104.782` ✓ |
+| 键盘 | 胶囊 `Tab` 可达（`document.activeElement` 即 `.island-pill`），`Enter` 展开、`Escape` 收合 | — |
+| 倒计时 | 墙钟跳 61s → `23:59`；暂停期间走的 5 分钟不计入 | §4.4 墙钟规则 ✓ |
+| 三语 | en：`Focus timer / 24:37 left / Pause / +5 minutes / End / 3:16 today`；es 同检 | `island.*` 键三语集合一致（测试断言）✓ |
+| 完成提醒 | live region 播报「本次 0:03 · 今日累计 3:16」；5.975s 后回落，7s 后活动结束；`sessions` 落账、`active` 清空 | `alertHold 5.975`、上游 upload 预设的 7s ✓ |
+| 减动效 | 媒体查询在 `island.js:1125` 读取；引擎分支由单测覆盖（0.2s 无过冲收敛 + 反向证明过冲检测在正常动效下会亮） | `motion.reduced.duration 0.2` ✓ |
+
+### 11.3 性能 trace（页面加载，1× CPU，无网络节流）
+
+- LCP 277 ms（load delay 116 / render delay 152）；CLS 0.0668。
+- **最大位移簇的根因是既有的未定尺寸 `.article-image`（0.0655）；岛自身那条位移分数 0.0000**（`button.island-pill`，`position:fixed` 不参与文档布局）。
+- 强制同步布局总计 **0.4 ms**，触发者首位是既有的 `paper.js:544`；`island.js` 只剩 `mount` 一次性 3 ms（插入固定子树后的首次布局），**每帧路径已不再出现任何读布局的调用**。
+- 375×720 手机档：`documentElement.scrollWidth = 375 = innerWidth`，无横向溢出；分裂跨度 246.77 仍容得下。胶囊遮住页眉中央的搜索按钮（§5 记录的取舍），但阅读工具条里的「搜索」按钮仍可点，移动端没有失去搜索入口。
+
+### 11.4 实测抓到、而单元测试各自都绿的四个缺陷
+
+1. `focus.js` 发的内容原子是 `{time:{until,format}}`，引擎认的是 `{until,format}` → 倒计时显示 `NaN:NaN`。
+2. 重画只按 `contentKey` 判断 → 同一条活动的就地更新（百分比、暂停态）永远不上屏。
+3. 完成 alert 只重写 `leading/center`，`merge` 保留了上一秒的倒计时原子 → 展开面底部显示 `0:00` 而不是本次时长。
+4. 同一帧先 `replaceChildren` 再读 `offsetWidth` → 浏览器把 `measureSlot` 列成全站最大的一条强制重排（15 ms）；改成写完排一个宏任务再读，降到 0。
+
+对应的防护是一条把两个模块放进同一 vm 沙箱、共用同一个假时钟的集成测试，以及忠实的 DOM 桩（`replaceChildren`、`[attr=value]` 选择器、拼接后代的 `textContent`）——桩不忠实，测试就会假绿。
+
+### 11.5 仍未接入的一项
+
+分裂的"黏颈"（`bridgePath` 已在引擎里并带单测）尚未接进副胶囊的进出动画：目前副胶囊按弹簧直接落位，缺那 0.4s 的拉丝。这是 §3.2 预留的独立里程碑。
