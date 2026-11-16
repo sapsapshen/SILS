@@ -437,3 +437,31 @@ node scripts/version-assets.mjs
 - 浏览器忽略 `Cross-Origin-Opener-Policy`：`http://120.53.222.178:8899` 不是可信来源，COOP 只在 HTTPS 或 localhost 下生效。要消掉它得上域名 + TLS（`deploy/README.md` 描述的目标态）。
 - 「懒加载图片缺显式尺寸」14 处：内容侧既有问题。
 - 生产机仍留着旧 `.venv`（Python 3.10）与 `run.sh` 备份，回滚 = 还原 `run.sh` 那一行 + `pm2 restart`；源码回滚 = 解 `backups/source-before-island-*.tar.gz`。
+- GitHub Actions 的 `deploy` 作业仍失败在 `Error: Set MODELSCOPE_API_KEY before deploying.`：仓库没配这个 secret，`08c317a`（11-15）那次也是同一句。`verify` 作业与它无关，已绿。
+- 生产树上 114 个 `content/i18n/*.json` 与 `requirements.txt`、`使用说明.txt`、一个 yml、一个测试 py 是 CRLF 字节（早先用 tar 从 Windows 工作副本同步留下的），`tr -d '\r'` 后与提交完全一致：JSON 解析、pip、pytest 都不看换行符，也没有 `?v=` 指纹契约，属于无害漂移，本次不动它们。
+
+### 12.5 第二轮：CI 回归与线上实测又抓到六个缺陷
+
+推送后 `verify` 作业先红在 `reading.js: document.dispatchEvent is not a function`：本仓库的
+`purplebook:route` / `purplebook:session` 都派发在 **window** 上，我新加的事件却派发到
+document，而监听方在 window —— 单元测试各测各的，只有 CI 的 exercise 冒烟把两端接起来才看得见。
+改成 `window` 后 `verify` 转绿（`676de05` 之前）。
+
+线上实测（chrome-devtools 驱动真实 Chrome，`http://120.53.222.178:8899`）又抓到五个：
+
+| 缺陷 | 症状 | 根因 | 修法 |
+| --- | --- | --- | --- |
+| 暂停时按钮"没按下" | `phase='paused'` 而 `aria-pressed=false` | 按钮是 none→start / paused→resume / running→pause 三态循环，`aria-pressed` 只认 running | `running \|\| paused` 都算按下（`648c6f4`） |
+| 结束后倒计时永远留在岛上 | `phase='none'` 但 `allActivities()` 仍有 `focus-timer`，胶囊还在走字 | `finish()` 把活动句柄清成 `null`，`stop()` 于是另起一条 alert，旧的那条没人 `end()` | `stop()` 先留住句柄并复用它，跟到点完成那条路径一致；复用时整片 `expanded` 一起重写，不留上一秒的原子（`676de05`） |
+| 看不见却能点、能聚焦的幽灵胶囊 | idle 时 `.island-pill` 仍有旧字数，`display` 是 `flex` | ① `paintSlots` 缺 `idle` 分支，字没擦；② `.island-pill` 自己写 `display:flex`，把 UA 的 `[hidden]{display:none}` 顶掉了，`hidden` 属性形同装饰 | 补 `idle` 分支擦净全部槽位；CSS 加 `.island-pill[hidden], .island-bubble[hidden], .island-expanded[hidden] { display: none; }`；`pill.hidden` 在 idle 也置真（`676de05`） |
+| 页眉正中浮一颗空的黑色胶囊 | 无活动时形状照画 94.85×36.84 | 上游的 `idle` 是**物理刘海**，网页上没有刘海可合回去；`shapeTarget('idle')` 照搬刘海尺寸 | `idle` 形状目标收到 0 宽，岛随弹簧合拢消失、活动出现时从零长出来；`METRICS.idle` 仍按上游实测保留在常量表（`a377715`） |
+| 进度活动被结束后永久哑掉 | 换章后岛不再跟进度，只 `update` 不 `start` | `progressSeen` 自己记"见过没有"，而 `island.start()` 对已存在 id 本来就转成 `update`（幂等），记状态纯属负债 | 去掉 `progressSeen`，恒走 `start()`；同时把测试 rig 的假岛改成同样会去重，否则这类 bug 在测试里根本测不出来（`397b55a`） |
+
+减动效用例的收敛窗口按新行程实测从 0.3s 放宽到 0.4s（0→150px 在 0.317s 才进阈值），并把口径写进用例名。
+
+### 12.6 线上实测的方法坑（两条都会给出假结果）
+
+- **后台标签页不给帧**：`document.hidden === true` 时 rAF 被节流到 0 帧，`d`、字数全空，看着像"形状画不出来"。Qoder 的 in-app Browser 面板没开就是 `viewport=0x0, visibilityState=hidden`，`take_screenshot` 直接报 `NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`。要用真实 Chrome（`frames=43/700ms` 这种计数确认有帧）再取证。
+- **前提没自检就下结论**：正文渐进渲染时 `scrollHeight` 还没长出来，`scrollTop = sh*0.25` 会被夹回 0；`scroll-behavior: smooth` 下同步读 `scrollTop` 拿到的还是旧值。这两点合起来一度让我以为"滚动不派发进度"。先打印 `scrollHeight / barWidth / pct` 再判断，结论立刻变成 `49% → 本章阅读进度 49%`。
+- **哈希差异要分两层**：`tr -d '\r'` 的比对能找内容差异，却会**盖掉换行符漂移**；`index.html` 的 `?v=` 是按 LF 内容算的，所以必须再拿 `git cat-file blob` 的哈希跟生产上的原始字节比一次，才查得出 `paper.css` / `i18n.css` / `login.css` 在服务上是 CRLF、指纹却在声明 LF 这件事。修完服务器侧 `test-exercise-wiring` 从 21/2 变 23/0。
+- **本地 `test-exercise-wiring` 的 2 条红是 Windows 假红**：`08c317a` 只把 `version-assets.mjs` 改成按 LF 算，`test-exercise-wiring.cjs` 仍按工作副本原始字节算；`.gitattributes` 声明了 `*.js/*.cjs/*.mjs/*.py/*.md` 却没管 `*.css` / `*.html`，`core.autocrlf=true` 下这些在 Windows 检出成 CRLF。在 `08c317a` 的干净 worktree 里跑同样得 21/2，失败文件名与 pin 一致 —— 与本次改动无关，也没有为了让它变绿去改那两个 CSS。
