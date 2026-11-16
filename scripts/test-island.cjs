@@ -472,6 +472,137 @@ check('主活动次序：priority 优先，其次先开始', () => {
   sameShape(Island.activities.map(a => a.id), ['high', 'mid', 'mid2', 'low']);
 });
 
+/* 假时钟环境：advance 以 1/60 秒步进，最后一帧正好停在目标时刻，
+   这样 5.975 这类边界不会因浮点误差差一帧。 */
+function rig(options) {
+  const Island = loadIsland();
+  let now = 0;
+  Island.internals.setClock(() => now);
+  // root 用裸对象（无 appendChild）走 headless，options 才是配置所在
+  Island.mount({}, Object.assign({}, options || {}));
+  const advance = seconds => {
+    const target = now + seconds;
+    while (now < target) { now = Math.min(target, now + 1 / 60); Island.internals.tick(now); }
+  };
+  return { Island, advance };
+}
+const trailingText = Island => {
+  const a = Island.activities[0];
+  return a && a.content.compact && a.content.compact.trailing ? a.content.compact.trailing.text : null;
+};
+
+check('alerting update：先用旧内容立即展开，0.12s 换上新内容，5.975s 后回落', () => {
+  const { Island, advance } = rig();
+  Island.start({ id: 'a', label: 'A', compact: { trailing: { text: '1' } } });
+  Island.update('a', { alert: true, compact: { trailing: { text: '2' } } });
+  // 上游语义（motion.ts 的 alertContentDelay 注释）：展开用的是**旧**内容，
+  // 新内容 0.12s 后就地换上。反过来会让岛上先闪一次空槽。
+  assert.equal(Island.presentation, 'expanded', 'alert 立刻展开');
+  assert.equal(trailingText(Island), '1', '展开的第一帧还是旧内容');
+  advance(0.2);
+  assert.equal(trailingText(Island), '2', '内容延迟之后才换');
+  assert.equal(Island.presentation, 'expanded');
+  advance(5.7);
+  assert.equal(Island.presentation, 'expanded', 'hold 未到不回落');
+  advance(0.3);
+  assert.equal(Island.presentation, 'compact', 'hold 到点回落');
+});
+
+check('idle 上的 alert 以 expanded 出场，并按 alertHoldIdle 回落', () => {
+  const { Island, advance } = rig();
+  Island.start({ id: 'a', label: 'A', alert: true, compact: { trailing: { text: '1' } }, expanded: { center: { text: '完成' } } });
+  assert.equal(Island.presentation, 'expanded', 'idle 岛的 alert 直接以展开出场');
+  advance(5.9);
+  assert.equal(Island.presentation, 'expanded', 'alertHoldIdle 5.969 还没到');
+  advance(0.1);
+  // 提醒回落只收起展开面，活动本身还在栈里 —— 结束活动是调用方的事（上游
+  // upload 预设就是这么做的：alert 之后另起一个 7s 定时器再 end）。
+  assert.equal(Island.presentation, 'compact', '回落到该活动自己的胶囊');
+  Island.end('a');
+  assert.equal(Island.presentation, 'idle');
+});
+
+check('alert 期间结束活动不会留下过期的回落定时器', () => {
+  const { Island, advance } = rig();
+  Island.start({ id: 'a', label: 'A', alert: true, compact: { trailing: { text: '1' } }, expanded: { center: { text: 'x' } } });
+  Island.end('a');
+  assert.equal(Island.presentation, 'idle');
+  advance(8);
+  assert.equal(Island.presentation, 'idle', '已消失的活动不该再把岛展开');
+});
+
+check('长按 0.216s 才展开；短按不展开', () => {
+  const { Island, advance } = rig();
+  Island.start({ id: 'a', label: 'A', compact: { trailing: { text: '1' } }, expanded: { center: { text: 'X' } } });
+  Island.press('hold');
+  advance(0.1);
+  assert.equal(Island.presentation, 'compact', '还没到阈值');
+  advance(0.15);
+  assert.equal(Island.presentation, 'expanded', '越过 0.216s 阈值');
+  Island.release();
+  Island.collapse();
+  Island.press('tap');
+  advance(0.5);
+  assert.equal(Island.presentation, 'compact', '点按不展开');
+});
+
+check('点按触发 onPress，长按不触发', () => {
+  const { Island, advance } = rig();
+  const seen = [];
+  Island.start({ id: 'a', label: 'A', onPress: () => seen.push('tap'), compact: { trailing: { text: '1' } }, expanded: { center: { text: 'X' } } });
+  Island.press('tap');
+  sameShape(seen, ['tap']);
+  Island.press('hold');
+  advance(0.3);
+  Island.release();
+  sameShape(seen, ['tap'], '长按只展开，不该同时触发 onPress');
+});
+
+check('外部点击与 Escape 收合', () => {
+  const { Island } = rig();
+  Island.start({ id: 'a', label: 'A', compact: { trailing: { text: '1' } }, expanded: { center: { text: 'X' } } });
+  Island.expand('a');
+  assert.equal(Island.presentation, 'expanded');
+  Island.internals.outsidePress();
+  assert.equal(Island.presentation, 'compact');
+  Island.expand('a');
+  Island.internals.keyEscape();
+  assert.equal(Island.presentation, 'compact');
+});
+
+check('减动效：约 0.2s 收敛且全程不过冲', () => {
+  const { Island, advance } = rig({ reducedMotion: true });
+  Island.start({ id: 'a', label: 'A', compact: { leading: { glyph: 'bookmark' }, trailing: { text: '43%' } } });
+  advance(0.3);
+  const geometry = Island.internals.currentGeometry();
+  assert.equal(geometry.settled, true, `未收敛：${JSON.stringify(geometry)}`);
+  assert.equal(geometry.overshot, false, '减动效不得过冲');
+  Island.expand('a');
+  advance(0.3);
+  assert.equal(Island.internals.currentGeometry().settled, true, '展开也必须已收敛');
+  assert.equal(Island.internals.currentGeometry().overshot, false);
+});
+
+check('正常动效下宽度弹簧确实过冲（证明过冲检测不是恒假）', () => {
+  const { Island, advance } = rig();
+  Island.start({ id: 'a', label: 'A', compact: { leading: { glyph: 'bookmark' }, trailing: { text: '43%' } } });
+  let overshot = false;
+  for (let i = 0; i < 40; i += 1) { advance(1 / 60); if (Island.internals.currentGeometry().overshot) overshot = true; }
+  assert.equal(overshot, true, 'appear 弹簧的 8.35% 过冲必须能被观察到');
+});
+
+check('currentGeometry 给出可直接画 path 的盒尺寸', () => {
+  const { Island, advance } = rig();
+  Island.start({ id: 'a', label: 'A', compact: { leading: { glyph: 'bookmark' }, trailing: { text: '43%' } } });
+  advance(1.5);
+  const geometry = Island.internals.currentGeometry();
+  assert.ok(Math.abs((geometry.right - geometry.left) - 151.1) < 0.6, `静止宽度 ${geometry.right - geometry.left}`);
+  assert.ok(Math.abs(geometry.height - 36.85) < 0.01, `高度 ${geometry.height}`);
+  assert.ok(Math.abs(geometry.top - 13.91) < 0.01);
+  assert.equal(geometry.kind, 'compact');
+  assert.equal(geometry.bubbleHeight, 0);
+});
+
 check('参考源与上游许可随仓库发布', () => {
   for (const f of ['spring.ts', 'path.ts', 'geometry.ts', 'metrics.ts', 'store.ts', 'README.md', 'motion-subset.ts', 'LICENSE']) {
     assert.ok(existsSync(resolve(ROOT, REF, f)), `missing ${REF}/${f}`);

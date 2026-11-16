@@ -1072,24 +1072,30 @@ function rig() {
   return { Island, advance, get now() { return now; } };
 }
 
-check('alerting update：0.12s 后展开内容，5.975s 后自动回落', () => {
+check('alerting update：先用旧内容立即展开，0.12s 换上新内容，5.975s 后回落', () => {
   const { Island, advance } = rig();
   Island.start({ id: 'a', label: 'A', compact: { trailing: { text: '1' } } });
   Island.update('a', { alert: true, compact: { trailing: { text: '2' } } });
-  assert.equal(Island.presentation, 'compact', 'alert 的第一拍仍是胶囊');
+  // 上游语义（motion.ts 的 alertContentDelay 注释）：展开用的是**旧**内容，
+  // 新内容 0.12s 后就地换上。反过来写会让岛上先闪一次空槽。
+  assert.equal(Island.presentation, 'expanded', 'alert 立刻展开');
+  assert.equal(trailingText(Island), '1', '展开的第一帧还是旧内容');
   advance(0.2);
-  assert.equal(Island.presentation, 'expanded', '内容延迟后展开');
-  advance(5.9);
+  assert.equal(trailingText(Island), '2', '内容延迟之后才换');
+  advance(5.7);
   assert.equal(Island.presentation, 'expanded', 'hold 未到不回落');
-  advance(0.2);
+  advance(0.3);
   assert.equal(Island.presentation, 'compact', 'hold 到点回落');
 });
 
-check('idle 上的 alert 以 expanded 出场（appearExpand）', () => {
+check('idle 上的 alert 以 expanded 出场，并按 alertHoldIdle 回落', () => {
   const { Island, advance } = rig();
   Island.start({ id: 'a', label: 'A', alert: true, compact: { trailing: { text: '1' } }, expanded: { center: { text: '完成' } } });
-  advance(0.2);
-  assert.equal(Island.presentation, 'expanded');
+  assert.equal(Island.presentation, 'expanded', 'idle 岛的 alert 直接以展开出场');
+  advance(5.9);
+  assert.equal(Island.presentation, 'expanded', 'alertHoldIdle 5.969 还没到');
+  advance(0.1);
+  assert.equal(Island.presentation, 'idle');
 });
 
 check('长按 0.216s 才展开；短按只回弹不展开', () => {

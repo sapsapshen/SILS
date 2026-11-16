@@ -137,7 +137,7 @@ Island.enabled;           // 挂载点缺失时为 false，全站静默降级
 
 - 全部 `islandMetrics` 数值
 - 10 条 transition 的 `shape`/`body`/`corner` 弹簧：appear `.483/.62`、expand `.517/.824`、pressExpand `.387/.792`、swap `.498/.829`、collapse `.479/.894`、alertCollapse `.535/.84`、split `.505/.815`、unsplit `.487/.794`、dismiss `.432/1.019`、resize `.5/.82`
-- alert（`alertContentDelay .12` → 展开 → `alertHold 5.975` → 回落）
+- alert（先用**旧内容立即展开**，`alertContentDelay .12` 后把新内容就地换上，`alertHold 5.975` 后回落；在 idle 岛上出场的 alert 用 `alertHoldIdle 5.969`）
 - 长按（`swellTime .22` / `longPress .216`、swell `×1.187`、点按 `squish .09`）
 - keyline 全式（本站 `--paper:#fff` luma≈1 ≥ `noneFrom .17`，实测算出 α=0，即浅色页不画带——保留代码路径以备深色与截图）
 - `content.follow`：槽位中心保持形状宽高的比例分数，缩放 `(wRatio×hRatio)^(follow/2)`，clamp `0.2–2.5`

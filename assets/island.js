@@ -171,26 +171,35 @@
       this.target = value;
       this.velocity = velocity;
       this.time = 0;
+      this.delay = 0;
+      this.side = Math.sign(value - value);
+      this.overshot = false;
       this.config = config;
     }
-    set(target, config) {
+    set(target, config, delay = 0) {
       if (target === this.target && (config === undefined || config === this.config)) return;
       if (config !== undefined) this.config = config;
       this.start = this.current;
       this.startVelocity = this.velocity;
       this.target = target;
       this.time = 0;
+      this.delay = delay;
+      this.side = Math.sign(this.start - target);      // 出发方向；越过目标即过冲
+      this.overshot = false;
     }
     step(dt) {
       if (!this.config) return;
       this.time += dt;
-      const state = solveSpring(this.config, this.target, this.start, this.startVelocity, this.time);
+      if (this.time < this.delay) return;
+      const state = solveSpring(this.config, this.target, this.start, this.startVelocity, this.time - this.delay);
       this.current = state.value;
       this.velocity = state.velocity;
+      if (this.side !== 0 && Math.sign(this.current - this.target) === -this.side) this.overshot = true;
     }
     get value() { return this.current; }
     get done() {
-      return Math.abs(this.current - this.target) < 1e-4 && Math.abs(this.velocity) < 1e-3;
+      return this.time >= this.delay
+        && Math.abs(this.current - this.target) < 1e-4 && Math.abs(this.velocity) < 1e-3;
     }
   }
 
@@ -510,7 +519,7 @@
   const timers = [];                                  // {at, fn}，Task 7 的 alert 与长按用
   const bySort = (a, b) => b.priority - a.priority || a.order - b.order;
   const find = id => state.activities.find(a => a.id === id);
-  const commit = () => { render(); };
+  const commit = () => { syncShape(); render(); };
 
   // 一侧为空时用另一侧，都没有时用 compact：上游 minimal 的兜底顺序。
   const minimalOf = content => (content && content.minimal) || (content && content.compact) || null;
@@ -568,8 +577,24 @@
     return out;
   };
 
-  const push = (at, fn) => { timers.push({ at, fn }); timers.sort((a, b) => a.at - b.at); };
-  const scheduleAlert = (id, at) => { /* Task 7 实现 alert 的展开与回落 */ };
+  const push = (at, fn, id) => { timers.push({ at, fn, id }); timers.sort((a, b) => a.at - b.at); };
+  // alerting：记住"当前展开是一次提醒"，回落时才能选 alertCollapse 那条弹簧。
+  const alerting = new Set();
+  // 上游语义（motion.ts 的 alertContentDelay 注释）：提醒**先用旧内容展开**，
+  // 新内容 alertContentDelay 之后就地换上，hold 用完后回落。在 idle 岛上出场的
+  // 提醒回落略早（alertHoldIdle），因为它没有"旧内容那一拍"。
+  const scheduleAlert = (id, at, contentDelta, wasIdle) => {
+    if (!find(id)) return;
+    const idle = wasIdle === undefined ? deriveScene(state).presentation.kind === 'idle' : wasIdle;
+    const hold = idle ? (MOTION.alertHoldIdle || MOTION.alertHold) : MOTION.alertHold;
+    alerting.add(id);
+    expand(id);
+    if (contentDelta) push(at + MOTION.alertContentDelay, () => update(id, contentDelta), id);
+    push(at + hold, () => {
+      alerting.delete(id);
+      if (state.expanded && state.expanded.id === id) collapse();
+    }, id);
+  };
   // Task 8 把它接成 rAF 帧循环；先占位，避免 mount 前有未定义引用。
   function scheduleFrame() { /* Task 8 */ }
 
@@ -578,6 +603,8 @@
   function start(options) {
     const existing = find(options.id);
     if (existing) { update(options.id, options); return handle(options.id); }
+    // 出场时岛是不是空的，决定这次提醒用 alertHold 还是略短的 alertHoldIdle。
+    const wasIdle = deriveScene(state).presentation.kind === 'idle';
     state.activities.push({
       id: options.id,
       label: options.label || options.id,
@@ -590,7 +617,7 @@
       onPress: options.onPress || null
     });
     state.activities.sort(bySort);
-    if (options.alert) scheduleAlert(options.id, clockNow());
+    if (options.alert) scheduleAlert(options.id, clockNow(), null, wasIdle);
     commit();
     return handle(options.id);
   }
@@ -598,6 +625,19 @@
   function update(id, partial) {
     const activity = find(id);
     if (!activity) return;
+    if (partial.alert) {
+      // 提醒这一拍先把岛展开成旧内容，新内容 0.12s 后就地换上（见 scheduleAlert）。
+      const delta = { ...partial };
+      delete delta.alert;
+      scheduleAlert(id, clockNow(), Object.keys(delta).length ? delta : null);
+      return;
+    }
+    applyContent(activity, partial);
+    state.activities.sort(bySort);
+    commit();
+  }
+
+  function applyContent(activity, partial) {
     if (partial.compact) activity.content.compact = merge(activity.content.compact, partial.compact);
     if (partial.expanded) activity.content.expanded = merge(activity.content.expanded, partial.expanded);
     if (partial.minimal) activity.content.minimal = merge(activity.content.minimal, partial.minimal);
@@ -606,9 +646,6 @@
     if (partial.onPress) activity.onPress = partial.onPress;
     // 内容"换脸"而非"变值"时 bump revision：渲染层据此换图层并走 crossfade。
     if (partial.transition === 'crossfade') activity.revision += 1;
-    if (partial.alert) scheduleAlert(id, clockNow());
-    state.activities.sort(bySort);
-    commit();
   }
 
   function end(id) {
@@ -631,6 +668,138 @@
   }
 
   function collapse() { state.expanded = null; commit(); }
+
+  // ---- 形状：八条腿各自一条弹簧 ----
+  // left/right/top/height 走 shape 与 body，radius 走 corner。上游把它们分开是
+  // 因为模拟器的圆角比高度慢半拍：合成一条弹簧会在收合时显得过方或过圆。
+  const SHAPE_KEYS = ['left', 'right', 'top', 'height', 'radius', 'bubbleLeft', 'bubbleRight', 'bubbleHeight'];
+  const TABLE_OF = { left: 'shape', right: 'shape', bubbleLeft: 'shape', bubbleRight: 'shape', top: 'body', height: 'body', bubbleHeight: 'body', radius: 'corner' };
+  const emptyMeasure = () => ({ leading: 0, trailing: 0, attached: 0, detached: 0, split: null, expandedHeight: 0 });
+
+  // headless（无 DOM）时的内容宽度模型：真实绘制由 Task 8 的 offsetWidth 实测，
+  // 这里只为让状态机与几何在没有页面的环境里仍然可算、可测。数字取自上游槽位：
+  // 紧凑图标 22pt、副胶囊 ring 20pt、15px 等宽数字约 6.6pt/字。
+  const HEADLESS = { glyph: 22, ring: 20, time: 33, char: 6.6, expandedHeight: 70 };
+  const specWidth = spec => {
+    if (!spec || typeof spec !== 'object') return 0;
+    if (spec.glyph !== undefined) return HEADLESS.glyph;
+    if (spec.ring !== undefined) return HEADLESS.ring;
+    if (spec.time !== undefined) return HEADLESS.time;
+    if (spec.text !== undefined) return String(spec.text).length * HEADLESS.char;
+    if (spec.bar !== undefined || spec.buttons) return 0;
+    return 0;
+  };
+  // DOM 可用时优先实测：槽位宽度是内容决定的，估算只在没有页面时兜底。
+  const measureSlot = (spec, node) => (node && node.offsetWidth ? node.offsetWidth : specWidth(spec));
+
+  const measureOf = (scene, nodes) => {
+    const p = scene.presentation;
+    const out = emptyMeasure();
+    if (p.kind === 'compact') {
+      out.leading = measureSlot(p.leading, nodes && nodes.leading);
+      out.trailing = measureSlot(p.trailing, nodes && nodes.trailing);
+    } else if (p.kind === 'minimal') {
+      out.split = {
+        attached: { leading: specWidth(p.split.attached.leading), trailing: specWidth(p.split.attached.trailing) },
+        detached: { leading: specWidth(p.split.detached.leading), trailing: specWidth(p.split.detached.trailing) }
+      };
+      out.attached = specWidth(p.attached && (p.attached.leading !== undefined ? p.attached.leading : p.attached));
+      out.detached = specWidth(p.detached && (p.detached.leading !== undefined ? p.detached.leading : p.detached));
+    } else if (p.kind === 'expanded') {
+      out.expandedHeight = (nodes && nodes.expandedHeight) || HEADLESS.expandedHeight;
+    }
+    return out;
+  };
+
+  const springFor = (table, name) => {
+    const base = (MOTION[table] && MOTION[table][name]) || MOTION.shape.resize;
+    if (!reducedMotion) return base;
+    return { response: REDUCED_SPRING.response, dampingFraction: REDUCED_SPRING.dampingFraction, delay: 0 };
+  };
+
+  const idleTarget = shapeTarget('idle', emptyMeasure(), METRICS.screen.width);
+  const shapeValues = {};
+  SHAPE_KEYS.forEach(key => { shapeValues[key] = new AnimatedValue(idleTarget[key], MOTION.shape.resize); });
+  let lastKind = 'idle';
+  let lastPrimaryId = null;
+  let lastScreenWidth = METRICS.screen.width;
+  let lastTickAt = null;
+  let measuredNodes = null;
+
+  const retarget = (target, name) => {
+    for (const key of SHAPE_KEYS) {
+      const config = springFor(TABLE_OF[key], name);
+      shapeValues[key].set(target[key], config, reducedMotion ? 0 : (config.delay || 0));
+    }
+  };
+
+  // 呈现变了就换弹簧目标；transition 由上游那张选择矩阵决定。
+  const syncShape = () => {
+    if (!mounted) return;
+    const scene = deriveScene(state);
+    const kind = scene.presentation.kind;
+    const primaryId = scene.primary ? scene.primary.id : null;
+    const swap = primaryId !== lastPrimaryId && kind !== 'idle';
+    const options = {
+      swap,
+      swelling: pressKind === 'hold' && (clockNow() - pressAt) >= MOTION.press.decide,
+      alert: alerting.size > 0
+    };
+    const target = shapeTarget(kind, measureOf(scene, measuredNodes), lastScreenWidth);
+    retarget(target, shapeTransition(lastKind, kind, options));
+    lastKind = kind;
+    lastPrimaryId = primaryId;
+  };
+
+  const outsidePress = () => { if (state.expanded) collapse(); };
+  const keyEscape = () => { if (state.expanded) collapse(); };
+
+  let pressKind = null;
+  let pressAt = 0;
+  const press = kind => {
+    pressKind = kind;
+    pressAt = clockNow();
+    if (kind === 'tap') release();
+    else commit();
+  };
+  function release() {
+    if (!pressKind) return;
+    const held = clockNow() - pressAt;
+    const primary = deriveScene(state).primary;
+    // 长按只负责展开（由 tick 越过阈值时触发），点按才走活动自己的 onPress。
+    if (pressKind === 'tap' || held < MOTION.longPress) { if (primary && primary.onPress) primary.onPress(); }
+    pressKind = null;
+    commit();
+  }
+
+  // 一帧：跑到期定时器、越过长按阈值则展开、推进所有形状弹簧。
+  const tick = now => {
+    const dt = lastTickAt === null ? 0 : Math.max(0, now - lastTickAt);
+    lastTickAt = now;
+    while (timers.length && timers[0].at <= now) {
+      const timer = timers.shift();
+      timer.fn();
+    }
+    if (pressKind === 'hold' && !state.expanded && now - pressAt >= MOTION.longPress) expand();
+    for (const key of SHAPE_KEYS) shapeValues[key].step(dt);
+    if (mounted && !headless) render();
+  };
+
+  const currentGeometry = () => {
+    const out = { kind: lastKind };
+    let settled = true;
+    let overshot = false;
+    for (const key of SHAPE_KEYS) {
+      const value = shapeValues[key];
+      out[key] = value.value;
+      if (!value.done) settled = false;
+      if (value.overshot) overshot = true;
+    }
+    out.width = out.right - out.left;
+    out.settled = settled;
+    out.overshot = overshot;
+    return out;
+  };
 
 
   const noop = () => {};
@@ -658,7 +827,8 @@
     end: id => { if (mounted) end(id); },
     expand: id => { if (mounted) expand(id); },
     collapse: () => { if (mounted) collapse(); },
-    press: noop,                          // Task 7：'hold' | 'tap'
+    press: kind => { if (mounted) press(kind); },
+    release: () => { if (mounted) release(); },
     internals: {
       METRICS, MOTION, REDUCED_SPRING, luma, keylineAlpha, solveSpring, AnimatedValue,
       fmt, edgeEase, continuousRectPath, roundedRectPath, capsulePath, bridgePath, cuspPath, chamferPath,
@@ -666,6 +836,7 @@
       deriveScene, isShown, minimalOf,
       scene: () => deriveScene(state),
       allActivities: () => state.activities.slice(),
+      tick, currentGeometry, outsidePress, keyEscape,
       setClock: fn => { clockNow = fn; },
       setReducedMotion: value => { reducedMotion = !!value; },
       isReduced: () => reducedMotion
