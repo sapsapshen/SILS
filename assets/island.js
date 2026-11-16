@@ -130,6 +130,70 @@
   // 减动效下所有腿换成这条：0.2s 收敛、临界阻尼无过冲（上游 motion.reduced）。
   const REDUCED_SPRING = { response: MOTION.reduced.duration / 2, dampingFraction: 1 };
 
+  // ---- spring.ts：SwiftUI 参数的闭式阻尼弹簧 ----
+  // stiffness = (2π/response)²，damping = 4π·dampingFraction/response，质量 1。
+  // 闭式而非数值积分：任一时刻的值精确，所以暂停的时钟可以跳到任意一帧且每次
+  // 得到同样的像素；数值积分会把步长选择变成可见差异。
+  const solveSpring = (config, target, x0, v0, t) => {
+    const w0 = 2 * Math.PI / config.response;
+    const z = config.dampingFraction;
+    const d = x0 - target;
+    if (z < 1 - 1e-9) {
+      const wd = w0 * Math.sqrt(1 - z * z);
+      const e = Math.exp(-z * w0 * t);
+      const A = d, B = (v0 + z * w0 * d) / wd;
+      const s = Math.sin(wd * t), c = Math.cos(wd * t);
+      return {
+        value: target + e * (A * c + B * s),
+        velocity: e * ((B * wd - A * z * w0) * c - (A * wd + B * z * w0) * s)
+      };
+    }
+    if (z < 1 + 1e-9) {
+      const e = Math.exp(-w0 * t);
+      const A = d, B = v0 + w0 * d;
+      return { value: target + e * (A + B * t), velocity: e * (B - w0 * (A + B * t)) };
+    }
+    const s = w0 * Math.sqrt(z * z - 1);
+    const r1 = -z * w0 + s, r2 = -z * w0 - s;
+    const A = (v0 - r2 * d) / (r1 - r2), B = d - A;
+    const e1 = Math.exp(r1 * t), e2 = Math.exp(r2 * t);
+    return { value: target + A * e1 + B * e2, velocity: A * r1 * e1 + B * r2 * e2 };
+  };
+
+  // 一个被动画的数字。set() 记下当前值与当前速度作为新弹簧的起点，所以展开
+  // 在半途被打断成收合时不会出现跳变；重复 set 同一个目标不起新弹簧，否则
+  // 每帧调 update 会把时钟按回 0，动画永远走不完。
+  class AnimatedValue {
+    constructor(value, config, velocity = 0) {
+      this.start = value;
+      this.startVelocity = velocity;
+      this.current = value;
+      this.target = value;
+      this.velocity = velocity;
+      this.time = 0;
+      this.config = config;
+    }
+    set(target, config) {
+      if (target === this.target && (config === undefined || config === this.config)) return;
+      if (config !== undefined) this.config = config;
+      this.start = this.current;
+      this.startVelocity = this.velocity;
+      this.target = target;
+      this.time = 0;
+    }
+    step(dt) {
+      if (!this.config) return;
+      this.time += dt;
+      const state = solveSpring(this.config, this.target, this.start, this.startVelocity, this.time);
+      this.current = state.value;
+      this.velocity = state.velocity;
+    }
+    get value() { return this.current; }
+    get done() {
+      return Math.abs(this.current - this.target) < 1e-4 && Math.abs(this.velocity) < 1e-3;
+    }
+  }
+
   // ---- keyline：metrics.ts 的 keylineFade，两点之间按对数插值 ----
   // 上游试过一条指数线，过不了两个实测点，所以按段插值而不是外推。
   const luma = hex => {
@@ -172,7 +236,7 @@
     expand: noop,
     collapse: noop,
     press: noop,
-    internals: { METRICS, MOTION, REDUCED_SPRING, luma, keylineAlpha, setClock: fn => { clock = fn; } }
+    internals: { METRICS, MOTION, REDUCED_SPRING, luma, keylineAlpha, solveSpring, AnimatedValue, setClock: fn => { clock = fn; } }
   };
   Island.internals.setReducedMotion = value => { reducedMotion = !!value; };
   Island.internals.isReduced = () => reducedMotion;

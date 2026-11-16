@@ -106,6 +106,59 @@ check('corner/body/shape 的 transition 键集合彼此一致', () => {
   assert.equal(keys('shape').split(',').length, 12, '上游 shapeTransitions 有 12 条');
 });
 
+check('solveSpring 闭式解：0→150 在 appear 弹簧上的实测轨迹', () => {
+  const { solveSpring, MOTION } = loadIsland().internals;
+  const at = t => solveSpring(MOTION.shape.appear, 150, 0, 0, t).value;
+  assert.equal(at(0), 0);
+  assert.ok(Math.abs(at(0.1) - 69.888) < 0.01, `t=.1 -> ${at(0.1)}`);
+  assert.ok(Math.abs(at(0.2) - 142.498) < 0.01, `t=.2 -> ${at(0.2)}`);
+  assert.ok(Math.abs(at(0.3) - 162.463) < 0.01, `t=.3 -> ${at(0.3)}`);   // 已过冲
+  assert.ok(Math.abs(at(1.5) - 150) < 0.001, `t=1.5 -> ${at(1.5)}`);
+  // 欠阻尼必有过冲：峰值约 162.5（+8.35%）出现在 t≈0.31
+  let peak = 0, peakT = 0;
+  for (let t = 0; t <= 1; t += 0.005) { const value = at(t); if (value > peak) { peak = value; peakT = t; } }
+  assert.ok(peak > 160 && peak < 165, `peak ${peak}`);
+  assert.ok(peakT > 0.28 && peakT < 0.34, `peakT ${peakT}`);
+  assert.equal(solveSpring(MOTION.shape.appear, 150, 0, 0, 0).velocity, 0);
+});
+
+check('过阻尼不发散，临界阻尼无过冲', () => {
+  const { solveSpring } = loadIsland().internals;
+  const over = t => solveSpring({ response: 0.432, dampingFraction: 1.019 }, 0, 150, 0, t).value;
+  assert.ok(Math.abs(over(1.2)) < 0.01, `dismiss settles at ${over(1.2)}`);
+  let maxAbove = -Infinity;
+  for (let t = 0; t <= 2; t += 0.005) maxAbove = Math.max(maxAbove, over(t));
+  assert.ok(maxAbove <= 150 + 1e-9, 'df>1 must not overshoot past the start value');
+  const crit = t => solveSpring({ response: 1, dampingFraction: 1 }, 100, 0, 0, t).value;
+  assert.ok(crit(0.5) > 0 && crit(0.5) < 100, `crit(0.5) ${crit(0.5)}`);
+  assert.ok(crit(5) > 99.9, `crit(5) ${crit(5)}`);
+});
+
+check('AnimatedValue 飞行中改目标保留速度，不跳变', () => {
+  const { AnimatedValue, MOTION } = loadIsland().internals;
+  const a = new AnimatedValue(0, MOTION.shape.expand);
+  a.set(374.34);
+  for (let i = 0; i < 12; i += 1) a.step(1 / 60);
+  const before = a.value;
+  assert.ok(before > 0 && before < 374.34, `mid-flight ${before}`);
+  a.set(94.85);                       // 展开被打断成收合
+  assert.equal(a.value, before, 'retarget must not jump the value');
+  for (let i = 0; i < 180; i += 1) a.step(1 / 60);
+  assert.ok(Math.abs(a.value - 94.85) < 0.01, `settled ${a.value}`);
+  assert.equal(a.done, true);
+});
+
+check('同一 set 重复调用不起新弹簧（避免每帧重置时钟）', () => {
+  const { AnimatedValue, MOTION } = loadIsland().internals;
+  const a = new AnimatedValue(0, MOTION.shape.appear);
+  a.set(150);
+  for (let i = 0; i < 6; i += 1) a.step(1 / 60);
+  const first = a.value;
+  a.set(150);
+  a.step(1 / 60);
+  assert.ok(a.value > first, 're-setting the same target must keep the spring running, not restart it');
+});
+
 check('参考源与上游许可随仓库发布', () => {
   for (const f of ['spring.ts', 'path.ts', 'geometry.ts', 'metrics.ts', 'store.ts', 'README.md', 'motion-subset.ts', 'LICENSE']) {
     assert.ok(existsSync(resolve(ROOT, REF, f)), `missing ${REF}/${f}`);
