@@ -13,6 +13,15 @@
 *.py text eol=lf
 *.md text eol=lf
 
+# CSS/HTML were the only text types still checkout-converted on Windows
+# (core.autocrlf=true). The asset pins hash LF bytes (scripts/version-assets.mjs)
+# while scripts/test-exercise-wiring.cjs hashes the working copy raw, so a CRLF
+# checkout of a pinned stylesheet made that check a permanent Windows-only red.
+# Pin these types to LF at checkout instead of weakening the check.
+*.css text eol=lf
+*.html text eol=lf
+.gitattributes text eol=lf
+
 # Vendored Pyodide is published byte-for-byte on jsdelivr. core.autocrlf=true
 # would rewrite pyodide.js / pyodide.asm.js / pyodide-lock.json on a Windows
 # checkout, which (a) breaks the sha256 verification in
