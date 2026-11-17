@@ -67,6 +67,7 @@ const REQUIRED = [
   'scripts/test-reader-copy.cjs',
   'scripts/test-book-search.cjs',
   'scripts/test-reader-routes.cjs',
+  'scripts/test-chapter-courses.cjs',
   'scripts/test-exercise-ui-mutations.cjs',
 ];
 
@@ -163,7 +164,7 @@ function readWorkflow() {
   return readFileSync(WORKFLOW, 'utf8');
 }
 
-test('21 个校验脚本都在 workflow 的某个 run: 里执行', () => {
+test('22 个校验脚本都在 workflow 的某个 run: 里执行', () => {
   const runs = parseRunBlocks(readWorkflow());
   assert.ok(runs.length >= 5, `only ${runs.length} run: blocks parsed; the parser is not seeing the steps`);
   const executed = scriptsIn(runs.join('\n'));
@@ -171,7 +172,7 @@ test('21 个校验脚本都在 workflow 的某个 run: 里执行', () => {
     '这些脚本没有在 CI 里执行，改动它们不会得到任何反馈');
 });
 
-test('21 个校验脚本都在 paths: 白名单里，否则 workflow 根本不会被触发', () => {
+test('22 个校验脚本都在 paths: 白名单里，否则 workflow 根本不会被触发', () => {
   const paths = new Set(parsePaths(readWorkflow()));
   assert.ok(paths.size >= 20, `only ${paths.size} paths: entries parsed; the parser is not seeing the filter`);
   assert.deepEqual(missing(REQUIRED, paths), [],

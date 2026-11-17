@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>延伸课程 · SILS</title>
+<meta name="description" content="超智学习空间的 GitHub 开源延伸课程目录：仓库链接、许可署名与章节映射。">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/home.css">
+<link rel="stylesheet" href="assets/review.css">
+<style>
+  body { margin: 0; background: #faf9fe; color: #201b39; font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  .courses-topbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 14px 24px; background: #fff; border-bottom: 1px solid #e8e4f4; }
+  .courses-topbar .wordmark { display: inline-flex; align-items: center; gap: 9px; font-weight: 700; color: #3d2a8c; text-decoration: none; }
+  .courses-topbar .back { margin-left: auto; color: #5d4b9c; text-decoration: none; font-size: 14px; }
+  #langSwitch { display: inline-flex; gap: 4px; }
+  #langSwitch button, #filters button { font: inherit; cursor: pointer; border: 1px solid #ded8ee; background: #fff; color: #4b3f7a; border-radius: 999px; padding: 5px 13px; font-size: 13px; }
+  #langSwitch button.is-active, #filters button.is-active { background: #7043db; border-color: #7043db; color: #fff; }
+  .page-banner { background: linear-gradient(135deg, #f1ecff, #faf9fe); border-bottom: 1px solid #e8e4f4; }
+  .page-banner .container { padding: 44px 24px 36px; max-width: 1120px; margin: 0 auto; }
+  .page-banner h1 { margin: 0 0 10px; font-size: clamp(26px, 4vw, 38px); color: #2c1e63; }
+  .page-banner p { margin: 0; color: #5b5478; line-height: 1.7; }
+  .courses-main { max-width: 1120px; margin: 0 auto; padding: 28px 24px 72px; }
+  .policy { background: #f2effc; border-left: 3px solid #7043db; padding: 13px 16px; border-radius: 4px; color: #4b4468; font-size: 14px; line-height: 1.7; }
+  #filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0 20px; }
+  .course-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 18px; }
+  .course-card { background: #fff; border: 1px solid #e8e4f4; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 2px 8px rgba(58, 35, 126, .04); }
+  .course-top { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; font-size: 12px; }
+  .course-repo { color: #6a6284; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; word-break: break-all; }
+  .course-license { color: #2c7a5b; background: #eaf7f1; border-radius: 4px; padding: 2px 7px; white-space: nowrap; }
+  .course-card h2 { margin: 0; font-size: 19px; color: #2c1e63; }
+  .course-summary { margin: 0; color: #554d70; line-height: 1.75; font-size: 14px; flex: 1; }
+  .course-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; margin: 0; font-size: 13px; }
+  .course-meta div { min-width: 0; }
+  .course-meta dt { color: #8a83a2; font-size: 11px; margin-bottom: 2px; }
+  .course-meta dd { margin: 0; color: #3b3456; word-break: break-word; }
+  .course-chapters { margin: 0; font-size: 13px; color: #6a6284; }
+  .course-chapters span { color: #8a83a2; }
+  .course-chapters a { display: inline-block; margin-right: 5px; padding: 1px 7px; border-radius: 4px; background: #f2effc; color: #5a3fb0; text-decoration: none; font-variant-numeric: tabular-nums; }
+  .course-open { align-self: flex-start; color: #fff; background: #7043db; text-decoration: none; border-radius: 7px; padding: 8px 15px; font-size: 14px; }
+  .course-open:hover { background: #5d34bd; }
+  .courses-footer { max-width: 1120px; margin: 0 auto; padding: 0 24px 48px; color: #8a83a2; font-size: 12px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .empty { color: #6a6284; }
+</style>
+</head>
+<body>
+<header class="courses-topbar">
+  <a class="wordmark" href="/#home">SILS <span style="font-weight:400;color:#8a83a2">超智学习空间</span></a>
+  <span id="langSwitch"></span>
+  <a class="back" id="backLink" href="/#home">← 返回学习空间</a>
+</header>
+<main>
+  <section class="page-banner"><div class="container">
+    <h1 id="pageTitle">延伸课程</h1>
+    <p id="pageSubtitle">从本书出发，继续读这些 GitHub 开源课程。</p>
+  </div></section>
+  <div class="courses-main">
+    <p class="policy" id="policy"></p>
+    <div id="filters" aria-label="课程筛选"></div>
+    <div class="course-grid" id="courseGrid"></div>
+  </div>
+</main>
+<footer class="courses-footer"><span id="verified"></span><span>教材来源：ModelScope ms-cookbook · Apache-2.0</span></footer>
+<script src="assets/external-courses-data.js"></script>
+<script src="assets/external-courses.js"></script>
+</body>
+</html>

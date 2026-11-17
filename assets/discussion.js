@@ -1,5 +1,13 @@
 (() => {
   'use strict';
+  /* Declarative invoker commands (commandfor/command) need a polyfill in older
+     browsers. Detect on HTMLButtonElement.prototype and only load when missing.
+     The original imperative close handler below is kept unconditionally as the
+     reliable fallback (a CDN polyfill is blocked by this site's strict CSP). */
+  if (typeof HTMLButtonElement !== 'undefined' &&
+      !('commandForElement' in HTMLButtonElement.prototype)) {
+    import('https://esm.run/invokers-polyfill').catch(() => {});
+  }
   const $ = s => document.querySelector(s);
   const t = window.MSI18N.t;
   const el = (tag, text, cls) => { const n=document.createElement(tag); if(text)n.textContent=text; if(cls)n.className=cls; return n; };
@@ -31,7 +39,7 @@
   const selectionBar=el('div',null,'selection-actions'); selectionBar.hidden=true; selectionBar.setAttribute('aria-label',t('a11y.selectionActions'));
   const save=el('button',t('discussion.saveHighlight')), write=el('button',t('discussion.writeThought')), dismiss=el('button',t('discussion.cancel'));
   selectionBar.append(save,write,dismiss); document.body.append(selectionBar);
-  const dialog=el('dialog',null,'annotation-dialog'); dialog.setAttribute('aria-labelledby','annotationTitle');
+  const dialog=el('dialog',null,'annotation-dialog'); dialog.id='annotationDialog'; dialog.setAttribute('aria-labelledby','annotationTitle');
   const dTitle=el('h2',t('discussion.dialogTitle')); dTitle.id='annotationTitle';
   const quote=el('blockquote'); const dForm=el('form');
   const dLabel=el('label',t('discussion.annotationLabel')); dLabel.htmlFor='annotationText';
@@ -39,6 +47,12 @@
   const dStatus=el('p');dStatus.setAttribute('role','status');
   const dSubmit=el('button',t('discussion.publish'),'discussion-primary');dSubmit.type='submit';
   const dClose=el('button',t('discussion.cancel')); dClose.type='button';
+  dClose.setAttribute('commandfor','annotationDialog'); dClose.setAttribute('command','close');
+  /* Keep the original imperative close handler unconditionally: a CDN
+     invokers-polyfill is blocked by this site's strict CSP, so on browsers
+     without native command support this is the only working close path.
+     close() is idempotent, so it coexists safely with native command. */
+  dClose.onclick=()=>dialog.close();
   dForm.append(dLabel,dText,el('p',t('discussion.annotationHint'),'discussion-hint'),dStatus,dSubmit,dClose);
   dialog.append(dTitle,quote,dForm);document.body.append(dialog);
 
@@ -160,7 +174,6 @@
     try{await api(`/api/chapters/${selected.chapter}/entries`,{method:'POST',body:JSON.stringify({...selected,kind:'highlight'})});selectionBar.hidden=true;getSelection().removeAllRanges();showTab('annotation');await load();status.textContent=t('discussion.savedHighlight');notify(status.textContent);}catch(e){status.textContent=e instanceof Error&&e.message?e.message:t('error.retryLater');notify(status.textContent);}finally{busy=false;save.disabled=false;}
   };
   write.onclick=()=>{if(!canWrite()||!anchor)return;quote.textContent=anchor.quote;dText.value='';dStatus.textContent='';selectionBar.hidden=true;dialog.showModal();dText.focus();};
-  dClose.onclick=()=>dialog.close();
   dForm.onsubmit=async e=>{e.preventDefault();if(busy||!anchor||!dText.value.trim())return;busy=true;dSubmit.disabled=true;
     try{await api(`/api/chapters/${anchor.chapter}/entries`,{method:'POST',body:JSON.stringify({...anchor,kind:'annotation',text:dText.value})});dialog.close();showTab('annotation');getSelection().removeAllRanges();await load();}catch(error){dStatus.textContent=error instanceof Error&&error.message?error.message:t('error.retryLater');}finally{busy=false;dSubmit.disabled=false;}
   };

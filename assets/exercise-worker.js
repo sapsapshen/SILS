@@ -724,8 +724,8 @@ function evaluateHostChecks(checks, stdout, answer) {
       return { ok, detail: ok ? '' : 'output did not match the expected shape' };
     }
     if (check.kind === 'output_choice') {
-      const chosen = Array.isArray(answer) ? answer.slice().sort() : [];
-      const expected = check.correct.slice().sort();
+      const chosen = Array.isArray(answer) ? answer.toSorted() : [];
+      const expected = check.correct.toSorted();
       const ok = chosen.length === expected.length && chosen.every((value, index) => value === expected[index]);
       return { ok, detail: `selected ${JSON.stringify(chosen)}` };
     }

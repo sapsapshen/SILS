@@ -1327,6 +1327,9 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
 
     @app.get('/')
     def index(): return FileResponse(ROOT/'index.html',headers={'Cache-Control':'no-cache'})
+    @app.get('/courses')
+    @app.get('/courses.html')
+    def courses_page(): return FileResponse(ROOT/'courses.html',headers={'Cache-Control':'no-cache'})
     @app.get('/analytics')
     def analytics_page(): return FileResponse(ROOT/'assets/analytics.html',headers={'Cache-Control':'no-store'})
     @app.get('/favicon.svg')

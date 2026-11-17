@@ -1,0 +1,25 @@
+/* Chapter-tail extension cards (assets/chapter-courses.js).
+   Sits between the article body and the chapter pager, so it inherits the warm
+   paper palette from styles.css and reads as part of the chapter, not a banner. */
+.chapter-courses{margin-top:44px;padding-top:28px;border-top:1px solid var(--rule)}
+.chapter-courses .cc-head h2{font-size:20px;font-weight:550;color:var(--heading);margin:0 0 7px;line-height:1.5}
+.chapter-courses .cc-intro{margin:0 0 18px;font-size:14px;line-height:1.7;color:var(--muted)}
+.chapter-courses .cc-list{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.chapter-courses .chapter-course{padding:16px 18px;border:1px solid var(--rule);border-radius:10px;background:var(--paper)}
+.chapter-courses .cc-top{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 12px;margin-bottom:9px;font-size:12px}
+.chapter-courses .cc-repo{color:var(--muted);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;word-break:break-all}
+.chapter-courses .cc-license{padding:1px 7px;border-radius:4px;background:var(--surface);color:var(--brand-ink);white-space:nowrap}
+.chapter-courses h3{margin:0 0 7px;font-size:17px;font-weight:550;line-height:1.5;color:var(--heading)}
+.chapter-courses .cc-summary{margin:0 0 11px;font-size:14px;line-height:1.75;color:var(--text)}
+.chapter-courses .cc-open{font-size:13px;font-weight:550;color:var(--brand-ink)}
+.chapter-courses .cc-open:hover{color:var(--brand-ink-hover);text-decoration:underline}
+.chapter-courses .cc-foot{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 16px;margin-top:16px;font-size:12px;color:var(--muted)}
+.chapter-courses .cc-note{line-height:1.65;max-width:56ch}
+.chapter-courses .cc-all{font-size:14px;font-weight:550;color:var(--brand-ink);white-space:nowrap}
+.chapter-courses .cc-all:hover{color:var(--brand-ink-hover);text-decoration:underline}
+@media(max-width:700px){
+  .chapter-courses{margin-top:32px;padding-top:22px}
+  .chapter-courses .cc-head h2{font-size:18px}
+  .chapter-courses .chapter-course{padding:14px 15px}
+  .chapter-courses .cc-summary{font-size:13.5px}
+}

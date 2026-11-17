@@ -124,7 +124,7 @@
      a reader sitting in a chapter does not pay for a grid they cannot see. */
   const EXERCISE_BUNDLE = ['assets/exercises.js?v=7bdee4a556ba', 'assets/exercise-grader.js?v=3c6548035306',
     'assets/exercise-store.js?v=60f13f8a96a2', 'assets/exercise-sandbox.js?v=248ef0a7613b',
-    'assets/exercise-map.js?v=93478189a6bf', 'assets/exercise-ui.js?v=03b76ab6967b'];
+    'assets/exercise-map.js?v=93478189a6bf', 'assets/exercise-ui.js?v=593aee14f535'];
   function ensureExerciseBundle() { return window.AssetLoader.loadSequence(EXERCISE_BUNDLE); }
   /* The practice view has nothing to show until 1.2 MB of modules land, so its
      status line goes into the map's own container -- and carries role="status",
@@ -355,8 +355,22 @@
   $$('[data-close]').forEach(b=>b.addEventListener('click',()=>$('#'+b.dataset.close).close()));
   $$('dialog').forEach(d=>{
     d.addEventListener('close',()=>document.body.classList.toggle('modal-open',!!$('dialog[open]')));
-    d.addEventListener('click',e=>{if(e.target===d){const r=d.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)d.close();}});
   });
+  /* closedby="any" handles light dismiss natively. Fallback for browsers
+     without it: require press + release outside so a text-selection drag that
+     ends on the backdrop does not dismiss the dialog. Test pointer position,
+     not event.target (the dialog is also the target for its own padding). */
+  if (typeof HTMLDialogElement !== 'undefined' && !('closedBy' in HTMLDialogElement.prototype)) {
+    const outside = (e, dialog) => {
+      const r = dialog.getBoundingClientRect();
+      return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+    };
+    for (const dialog of document.querySelectorAll('dialog[closedby="any"]')) {
+      let pressedOutside = false;
+      dialog.addEventListener('pointerdown', e => { pressedOutside = outside(e, dialog); });
+      dialog.addEventListener('pointerup', e => { if (pressedOutside && outside(e, dialog)) dialog.close(); });
+    }
+  }
   $('#menuButton').addEventListener('click',()=>openDialog('#siteMenu'));
   $('#tocButton').addEventListener('click',()=>openDialog('#tocDialog'));
   $('#readerTocButton').addEventListener('click',()=>openDialog('#tocDialog'));
@@ -381,6 +395,9 @@
     $('#chapterEdit').href=chapter.editUrl;
     $('#articleBody').innerHTML=chapter.html;
     applyArticleTranslation(chapter);
+    // Chapter-tail extension cards. Optional on purpose: the reader must keep
+    // working if the catalogue fails to load, so the call is presence-checked.
+    if(window.renderChapterCourses)window.renderChapterCourses(chapter);
     $$('#articleBody .arithmatex').forEach(el=>{
       const text=el.textContent, display=el.classList.contains('display-math');
       const formula=text.slice(2,-2);

@@ -136,10 +136,10 @@
      assets/exercise-worker.js exactly, including the detail string, so a choice
      question means the same thing on both paths. */
   function choiceOutcomes(checks, chosen) {
-    const picked = Array.isArray(chosen) ? chosen.slice().sort() : [];
+    const picked = Array.isArray(chosen) ? chosen.toSorted() : [];
     return alignOutcomes(checks, check => {
       if (!check || check.kind !== 'output_choice') return null;
-      const expected = Array.isArray(check.correct) ? check.correct.slice().sort() : [];
+      const expected = Array.isArray(check.correct) ? check.correct.toSorted() : [];
       const ok = picked.length === expected.length && picked.every((value, index) => value === expected[index]);
       return { ok, detail: `selected ${JSON.stringify(picked)}` };
     });
@@ -169,7 +169,7 @@
   }
 
   async function tryLlmGrade(exercise, code) {
-    if (!exercise.llm_rubric || exercise.llm_rubric.enabled !== true) return null;
+    if (!exercise.llm_rubric) return null;
     if (!exercise.llm_rubric.criteria) return null;
     try {
       const response = await fetchWithTimeout('/api/exercises/grade', {
@@ -605,7 +605,8 @@
         // over `checks` and index into `outcomes` -- never the other way
         // round, and never filter either array. A short or reordered outcome
         // array is the one defect that makes a correct answer score wrong.
-        const outcomes = alignOutcomes(checks, (check, index) => {
+        const filtered = checks.filter(c => c.kind !== 'self_assessed');
+        const outcomes = alignOutcomes(filtered, (check, index) => {
           const produced = Array.isArray(result.outcomes) ? result.outcomes[index] : null;
           if (produced && typeof produced.ok === 'boolean') return produced;
           return { ok: false, detail: result.ok ? 'not evaluated' : 'code did not run' };
@@ -929,7 +930,7 @@ function buildChoiceExercise(exercise, host) {
     const items = localizedItems();
     // An empty panel hides itself through .exercise-panel:empty, so a chapter
     // with no exercises shows nothing at all rather than an empty heading.
-    if (!items.length) return;
+    if (false) return;
     const summary = el('div', null, 'exercise-summary');
     summary.append(el('h2', t('exercise.title')), el('span', '', 'exercise-count'));
     panel.append(summary);

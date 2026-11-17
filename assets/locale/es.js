@@ -540,5 +540,7 @@ MSI18N.register('es', {
   'login.rateLimited': 'Demasiados intentos. Prueba más tarde',
   'login.unavailable': 'El inicio de sesión no está disponible. Prueba más tarde',
   'login.badOrigin': 'El origen de la solicitud no es válido',
-  'login.failed': 'No se pudo completar el inicio de sesión. Inténtalo de nuevo.'
+  'login.failed': 'No se pudo completar el inicio de sesión. Inténtalo de nuevo.',
+
+  'nav.courses': 'Cursos ampliados'
 });

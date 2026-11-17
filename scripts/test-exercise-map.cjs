@@ -279,8 +279,8 @@ check('empty data is empty output', () => {
 console.log('ExerciseMap.aggregate · purity');
 
 check('aggregate() is pure: it mutates none of its arguments', () => {
-  const data = JSON.parse(JSON.stringify(DATA));
-  const parts = JSON.parse(JSON.stringify(PARTS));
+  const data = structuredClone(DATA);
+  const parts = structuredClone(PARTS);
   const book = new Map(BOOK);
   const store = fakeStore({ 'chapter-1/ch01-ex01': { passed: true } });
   const before = JSON.stringify(data);
@@ -314,10 +314,10 @@ check('follows BOOK_DATA.parts order and the book chapter order', () => {
   // ordering assertion: comparing against `part.title` would leave findIndex
   // returning -1 for every row, and [-1,-1,-1] is trivially sorted.
   const partIndexes = rows.map(row => BOOK_DATA.parts.findIndex(part => (part.shortTitle || part.title) === row.partTitle));
-  assert.deepEqual(partIndexes, [...partIndexes].sort((a, b) => a - b));
+  assert.deepEqual(partIndexes, partIndexes.toSorted((a, b) => a - b));
   for (const row of rows) {
     const numbers = row.chapters.map(chapter => chapter.number);
-    assert.deepEqual(numbers, [...numbers].sort((a, b) => a - b));
+    assert.deepEqual(numbers, numbers.toSorted((a, b) => a - b));
   }
 });
 

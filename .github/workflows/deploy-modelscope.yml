@@ -49,6 +49,7 @@ on:
       - 'scripts/test-reader-copy.cjs'
       - 'scripts/test-book-search.cjs'
       - 'scripts/test-reader-routes.cjs'
+      - 'scripts/test-chapter-courses.cjs'
       - 'scripts/test-ci-coverage.cjs'
       - 'README*.md'
       - 'LICENSE'
@@ -134,6 +135,10 @@ jobs:
         run: |
           node scripts/test-book-search.cjs
           node scripts/test-reader-routes.cjs
+          # The chapter-tail course cards are the only place where the reader
+          # renders catalogue data. A chapter number that matches nothing, or a
+          # card that drops its license line, is invisible in the browser.
+          node scripts/test-chapter-courses.cjs
       - name: Verify the exercise modules
         run: |
           # The grading logic, against the corpus harness. Its fake Pyodide is

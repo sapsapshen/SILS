@@ -540,5 +540,7 @@ MSI18N.register('zh', {
   'login.rateLimited': '登录尝试太频繁，请稍后再试',
   'login.unavailable': '登录服务暂时不可用，请稍后重试',
   'login.badOrigin': '请求来源无效',
-  'login.failed': '登录未完成，请稍后重试。'
+  'login.failed': '登录未完成，请稍后重试。',
+
+  'nav.courses': '延伸课程'
 });

@@ -201,7 +201,7 @@ test('代码里每一个 t() 调用都能在三语中查到', () => {
 
 test('代码里用到的 key 与本文件清单一一对应', () => {
   const used = keysUsedInCode();
-  assert.deepEqual([...used].sort(), [...KEYS].sort(),
+  assert.deepEqual([...used].toSorted(), [...KEYS].toSorted(),
     '清单与源码实际调用的 key 不一致：多出的或漏掉的都会在页面上变成字面量 key');
 });
 

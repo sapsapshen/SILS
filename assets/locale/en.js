@@ -540,5 +540,7 @@ MSI18N.register('en', {
   'login.rateLimited': 'Too many sign-in attempts. Try again later',
   'login.unavailable': 'Sign-in is temporarily unavailable. Try again later',
   'login.badOrigin': 'The request origin was rejected',
-  'login.failed': 'Sign-in did not finish. Try again.'
+  'login.failed': 'Sign-in did not finish. Try again.',
+
+  'nav.courses': 'Extended courses'
 });

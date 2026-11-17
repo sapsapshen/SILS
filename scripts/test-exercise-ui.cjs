@@ -785,8 +785,7 @@ async function main() {
   });
 
   await check('卡片被收起后迟到的 rubric 意见不会写进已经卸载的节点', async () => {
-    let release;
-    const gate = new Promise(resolve => { release = resolve; });
+    const { promise: gate, resolve: release } = Promise.withResolvers();
     const h = boot({
       data: exerciseData([reflectWithRubric()]),
       fetch: url => String(url).includes('/grade')
@@ -1152,8 +1151,7 @@ await check('切换语言后重新渲染，面板仍然可用', () => {
   });
 
   await check('运行中显示加载提示（Pyodide 按需下载）', async () => {
-    let release;
-    const gate = new Promise(resolve => { release = resolve; });
+    const { promise: gate, resolve: release } = Promise.withResolvers();
     const h = boot({
       sandbox: {
         run: () => gate.then(() => ({ok: true, ms: 1, outcomes: [{ok: true, detail: ''}]})),

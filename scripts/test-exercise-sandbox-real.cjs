@@ -197,9 +197,9 @@ function createFacade(realHost) {
        worker has started, the facade has not been answered, and the listeners
        are provably still attached. */
     holdResults() {
-      let open;
-      Worker.gate = new Promise(resolve => { open = resolve; });
-      return () => { Worker.gate = null; open(); };
+      const { promise, resolve } = Promise.withResolvers();
+      Worker.gate = promise;
+      return () => { Worker.gate = null; resolve(); };
     },
   };
 }
