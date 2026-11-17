@@ -55,11 +55,17 @@
   function apply(root) {
     const scope = root || document;
     scope.querySelectorAll('[data-i18n]').forEach(node => {
-      const value = t(node.getAttribute('data-i18n'), variables(node));
+      const key = node.getAttribute('data-i18n');
+      /* 词条缺失（多为语言包被缓存成旧版）时保留页内原文，
+         绝不把键名当成正文刷到页面上。 */
+      if (!has(key)) return;
+      const value = t(key, variables(node));
       if (node.textContent !== value) node.textContent = value;
     });
     scope.querySelectorAll('[data-i18n-html]').forEach(node => {
-      const value = t(node.getAttribute('data-i18n-html'), variables(node));
+      const key = node.getAttribute('data-i18n-html');
+      if (!has(key)) return;
+      const value = t(key, variables(node));
       if (node.dataset.i18nMarkup !== value) { node.innerHTML = value; node.dataset.i18nMarkup = value; }
     });
     scope.querySelectorAll('[data-i18n-attr]').forEach(node => {
@@ -67,16 +73,17 @@
       node.getAttribute('data-i18n-attr').split('|').forEach(pair => {
         const [attribute, key] = pair.split(':').map(part => part && part.trim());
         if (!attribute || !key) return;
+        if (!has(key)) return;
         const value = t(key, vars);
         if (node.getAttribute(attribute) !== value) node.setAttribute(attribute, value);
       });
     });
     document.documentElement.lang = htmlLang[current] || current;
     const titleKey = document.documentElement.getAttribute('data-i18n-title');
-    if (titleKey) document.title = t(titleKey);
+    if (titleKey && has(titleKey)) document.title = t(titleKey);
     const descriptionKey = document.documentElement.getAttribute('data-i18n-description');
     const meta = document.querySelector('meta[name="description"]');
-    if (descriptionKey && meta) meta.setAttribute('content', t(descriptionKey));
+    if (descriptionKey && meta && has(descriptionKey)) meta.setAttribute('content', t(descriptionKey));
   }
   function notify() {
     apply();
@@ -88,8 +95,8 @@
      reader never needs. They are injected on demand, so `set` has to wait for
      them: notifying first would paint half-translated chrome over Chinese prose. */
   const extraPaths = {
-    en: ['assets/locale/en.js?v=4a92e68f34ad', 'assets/content-i18n/en.js?v=cfe855d0ca04'],
-    es: ['assets/locale/es.js?v=fdd3785965f4', 'assets/content-i18n/es.js?v=a424bed4b45a']
+    en: ['assets/locale/en.js?v=c5f178583523', 'assets/content-i18n/en.js?v=cfe855d0ca04'],
+    es: ['assets/locale/es.js?v=0d2776c2a952', 'assets/content-i18n/es.js?v=a424bed4b45a']
   };
   async function load(code) {
     const next = normalize(code);

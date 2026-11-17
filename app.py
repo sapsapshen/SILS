@@ -619,7 +619,19 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
     def public_user(u):
         return {'id':u['id'],'name':u['name'],'moderator':is_moderator(u)} if u else None
     def safe_return_to(value):
-        return value if re.fullmatch(r'#[a-zA-Z0-9_/?=&%-]{1,180}', value or '') else '#home'
+        # Anchors (the book's own routes) keep working; same-origin page paths are accepted
+        # too, so /cases and /courses.html survive login instead of falling back to the home
+        # page. Anything absolute, protocol-relative or containing a backslash is refused.
+        text = (value or '').strip()
+        if re.fullmatch(r'#[a-zA-Z0-9_/?=&%.-]{1,180}', text):
+            return text
+        if re.fullmatch(r'/(?!/)[a-zA-Z0-9_/?=&%.-]{0,180}', text):
+            return text
+        return '#home'
+
+    def return_to_url(target):
+        # '/cases' must stay '/cases'; '//cases' would be read as a host by the browser.
+        return target if target.startswith('/') else '/' + target
     def require_user(request):
         u=user(request)
         if not u: raise HTTPException(401,'请先登录')
@@ -831,7 +843,7 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
         target=safe_return_to(return_to)
         request.session['return_to']=target
         if local_login_enabled:
-            if user(request): return RedirectResponse('/'+target,status_code=303)
+            if user(request): return RedirectResponse(return_to_url(target),status_code=303)
             return FileResponse(ROOT/'login.html',headers={'Cache-Control':'no-store'})
         if not oidc_enabled: raise HTTPException(503,'登录尚未配置')
         return await oauth.modelscope.authorize_redirect(request, base+'/auth/callback')
@@ -873,7 +885,7 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
         target=safe_return_to(payload.return_to)
         request.session.clear()
         request.session.update(sid=sid,csrf=secrets.token_urlsafe(32))
-        return {'ok':True,'return_to':'/'+target}
+        return {'ok':True,'return_to':return_to_url(target)}
 
     @app.get('/auth/callback')
     async def callback(request: Request):
@@ -896,7 +908,7 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
         target=request.session.get('return_to','#home')
         request.session.clear()
         request.session.update(sid=sid,csrf=secrets.token_urlsafe(32))
-        return RedirectResponse('/'+target,status_code=303)
+        return RedirectResponse(return_to_url(target),status_code=303)
 
     @app.post('/api/logout')
     def logout(request: Request):
@@ -1326,7 +1338,19 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
         return {'score':score,'feedback':feedback}
 
     @app.get('/')
+    @app.get('/index.html')
+    @app.get('/index.htm')
     def index(): return FileResponse(ROOT/'index.html',headers={'Cache-Control':'no-cache'})
+    @app.get('/cases')
+    @app.get('/cases.html')
+    def cases_page():
+        # 场景方案页。独立静态页：销售要能直接把链接发给客户。
+        return FileResponse(ROOT/'assets/cases.html',headers={'Cache-Control':'no-cache'})
+    @app.get('/teams')
+    @app.get('/teams.html')
+    def teams_page():
+        # 团队内训与报价页。独立静态页，不依赖 SPA。
+        return FileResponse(ROOT/'assets/teams.html',headers={'Cache-Control':'no-cache'})
     @app.get('/courses')
     @app.get('/courses.html')
     def courses_page(): return FileResponse(ROOT/'courses.html',headers={'Cache-Control':'no-cache'})

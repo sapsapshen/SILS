@@ -1,0 +1,66 @@
+/* 导航栏「当前位置」层。只加状态样式与一枚索引徽标，不改任何导航项、顺序与文案。 */
+
+/* 1. 当前项：底线下划线。原来只有改色改字重，与 hover 完全同色，等于没有指示。 */
+.desktop-nav > a[aria-current="page"]{
+  color:var(--brand-ink);
+  font-weight:650;
+  position:relative;
+}
+.desktop-nav > a[aria-current="page"]::after{
+  content:"";
+  position:absolute;
+  left:0;right:0;bottom:-1px;
+  height:2px;
+  border-radius:2px;
+  background:var(--brand-ink);
+}
+
+/* 2. 父级：正在读某一章时，「全书目录」表示你在这本书里但不在目录页。 */
+.desktop-nav > a[data-ancestor]{
+  color:var(--brand-ink);
+  position:relative;
+}
+.desktop-nav > a[data-ancestor]::after{
+  content:"";
+  position:absolute;
+  left:0;right:0;bottom:-1px;
+  height:0;
+  border-bottom:1px dotted var(--brand-ink);
+  opacity:.55;
+}
+
+/* 3. 章节索引徽标：仅阅读章节时出现在主导航末尾、CTA 之前。 */
+.header-chapter-index{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  margin-left:auto;
+  padding:4px 10px;
+  border:1px solid var(--hair-lit);
+  border-radius:999px;
+  background:var(--surface);
+  color:var(--brand-ink);
+  font-size:13px;
+  font-weight:600;
+  font-variant-numeric:tabular-nums;
+  text-decoration:none;
+  white-space:nowrap;
+}
+.header-chapter-index:hover{background:var(--selected);color:var(--brand-ink)}
+.header-chapter-index[hidden]{display:none}
+
+/* 4. 移动端站点菜单：当前项给底色，父级给虚线。 */
+.mobile-page-nav a[aria-current="page"]{
+  background:var(--selected);
+  color:var(--brand-ink);
+  font-weight:600;
+}
+.mobile-page-nav a[data-ancestor]{
+  color:var(--brand-ink);
+  box-shadow:inset 0 -1px 0 var(--hair-lit);
+}
+
+/* 窄屏工具栏本就拥挤，交给底部阅读条与文章头的「第 N 章」表达位置。 */
+@media (max-width:1240px){
+  .header-chapter-index{display:none}
+}

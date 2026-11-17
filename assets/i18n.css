@@ -8,7 +8,7 @@
 .language-picker:hover { border-color: var(--brand-ink); background: var(--surface); }
 .language-select {
   appearance: none; -webkit-appearance: none; border: 0; margin: 0; padding: 2px 20px 2px 0;
-  background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a7c9b' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 3px center / 9px 6px;
+  background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a580c' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 3px center / 9px 6px;
   color: inherit; font: inherit; font-size: 13px; line-height: 1.5; white-space: nowrap; cursor: pointer;
 }
 .language-select:focus-visible { outline: 2px solid var(--brand-ink); outline-offset: 3px; border-radius: 4px; }
@@ -134,4 +134,11 @@ html:lang(en) .home-fact > *, html:lang(es) .home-fact > * { min-width: 0; }
 /* The reader bar needs room for the search box: the secondary "explore" link yields. */
 @media (max-width: 1200px) {
   html:lang(en) .reader-overview, html:lang(es) .reader-overview { display: none; }
+}
+/* ≤360: en/es header inline padding 24px -> 16px so the logged-in account
+   area ("Cerrar sesión") fits at 320. header-app.css carries the same value for the
+   three tab pages; both files must stay identical. */
+@media (max-width:360px){
+  html:lang(en) .app-header,
+  html:lang(es) .app-header{padding-inline:16px}
 }

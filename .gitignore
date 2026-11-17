@@ -8,3 +8,8 @@ __pycache__/
 .i18n-source/
 .commandcode/
 .superpowers/
+
+# runtime data and build artifacts must never be committed
+backups/
+logs/
+assets/manuscript-20260914/

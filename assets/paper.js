@@ -5,6 +5,8 @@
   const $ = selector => document.querySelector(selector);
   const $$ = selector => [...document.querySelectorAll(selector)];
   const t = window.MSI18N.t;
+  /* 词条缺失时用写死的中文兜底，绝不把键名写进页面。 */
+  const tSafe = (key, fallback) => (window.MSI18N && window.MSI18N.has && window.MSI18N.has(key)) ? t(key) : fallback;
   // Article prose is contributed in Chinese; the translated editions live in
   // assets/content-i18n/*.js keyed by the exact Chinese source, so anchors, code
   // blocks and markup stay byte-identical to the published source.
@@ -524,8 +526,25 @@
       if(!inPlace)closeDialogs();
       $$('[data-page]').forEach(p=>p.hidden=p.dataset.page!==view);
       document.body.dataset.view=view;
-      $$('.desktop-nav [data-route]').forEach(a=>{if(a.dataset.route===view)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
-      $('#headerAction').textContent=view==='reader'?t('nav.backHome'):t('nav.startReading');$('#headerAction').href=view==='reader'?'#home':'#chapter-1';
+      const routeLinks=$$('[data-route]');
+      routeLinks.forEach(a=>{
+        if(a.dataset.route===view)a.setAttribute('aria-current','page');
+        else{a.removeAttribute('aria-current');a.removeAttribute('data-ancestor');}
+      });
+      /* 读某一章时，「全书目录」是本页的父级：它不是当前页，但要能看出你在书里。 */
+      if(view==='reader'&&chapter)$$('[data-route="contents"]').forEach(a=>a.setAttribute('data-ancestor',''));
+      const indexPill=$('#headerChapterIndex');
+      if(indexPill){
+        const total=(data.chapters||[]).filter(c=>c.number).length;
+        if(view==='reader'&&chapter&&chapter.number){
+          const label=chapterTitle(chapter);
+          $('#headerChapterIndexText').textContent=chapter.number+' / '+total;
+          indexPill.title=t('reader.chapterNumber',{n:chapter.number})+' · '+label;
+          indexPill.setAttribute('aria-label',indexPill.title);
+          indexPill.hidden=false;
+        }else{indexPill.hidden=true;indexPill.removeAttribute('title');}
+      }
+      $('#headerAction').textContent=view==='reader'?tSafe('nav.backHome','返回首页'):tSafe('nav.startReading','开始阅读');$('#headerAction').href=view==='reader'?'#home':'#chapter-1';
       $('#mobileChapterNav').hidden=view!=='reader';
       if(view==='reader') {
         if(currentChapter?.id!==chapter.id||currentView!=='reader'||pathChanged)renderChapter(chapter);

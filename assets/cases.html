@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="zh-CN" data-i18n-title="cases.docTitle" data-i18n-description="cases.metaDesc">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f7c13b">
+<meta name="description" content="超智学习空间场景方案：客服质检、产线巡检、企业知识问答。基于开源教材的真实章节，给出可交付范围、周期与报价。">
+<title>场景方案 · 超智学习空间</title>
+<link rel="icon" href="/assets/brand/book-mark.svg" type="image/svg+xml">
+<style>
+:root{--ink:#171412;--ink-2:#4a423d;--line:rgba(23,20,18,.12);--brand:#8a580c;--bg:#faf7f1;--card:#fff;--warn:#8a5a00;--warn-bg:#fff6e0}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif}
+a{color:var(--brand)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+.top{border-bottom:1px solid var(--line);background:#fff}
+.top .wrap{display:flex;align-items:center;justify-content:space-between;height:64px;gap:16px}
+@font-face{font-family:"Purple Book Serif";src:url("/assets/brand/wordmark-serif.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap}
+/* LOGO 与首页 .wordmark 完全一致：定制衬线体、24px/700、字距 .075em、图标 38px */
+.brand{display:flex;align-items:center;gap:11px;font-family:"Purple Book Serif","Songti SC",STSong,serif;font-size:24px;font-weight:700;line-height:1.3;letter-spacing:1.8px;text-decoration:none;color:#221e16}
+.brand img{width:38px;height:38px}
+.top nav{display:flex;gap:18px;font-size:14px}
+.top nav a{color:var(--ink-2);text-decoration:none}
+.hero{padding:56px 0 32px}
+.kicker{display:inline-block;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--brand);font-weight:700;margin-bottom:14px}
+h1{font-size:clamp(28px,4.2vw,42px);line-height:1.2;margin:0 0 16px;letter-spacing:-.02em}
+.lead{font-size:17px;color:var(--ink-2);max-width:64ch;margin:0 0 22px}
+.disclaimer{background:var(--warn-bg);border:1px solid rgba(138,90,0,.22);color:var(--warn);
+  border-radius:14px;padding:14px 16px;font-size:14px;margin:0 0 8px}
+.case{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:26px;margin:20px 0;
+  display:grid;gap:16px}
+.case h2{margin:0;font-size:22px;letter-spacing:-.01em}
+.case .meta{display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--ink-2)}
+.chip{border:1px solid var(--line);border-radius:999px;padding:3px 10px;background:#fbf9f5}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}
+.block h3{margin:0 0 6px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--brand)}
+.block ul{margin:0;padding-left:18px;font-size:14px;color:var(--ink-2)}
+.block li{margin:3px 0}
+.block p{margin:0;font-size:14px;color:var(--ink-2)}
+.price-row{display:flex;flex-wrap:wrap;gap:18px;align-items:baseline;
+  border-top:1px solid var(--line);padding-top:14px;font-size:14px;color:var(--ink-2)}
+.price-row b{font-size:20px;color:var(--ink)}
+.cta{display:flex;flex-wrap:wrap;gap:12px;margin:36px 0 8px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:13px 22px;border-radius:999px;
+  font-weight:600;text-decoration:none;border:1px solid transparent;font-size:15px}
+.btn-primary{background:var(--ink);color:#fff}
+.btn-ghost{border-color:var(--line);color:var(--ink)}
+footer{border-top:1px solid var(--line);padding:26px 0;margin-top:40px;font-size:13px;color:var(--ink-2)}
+footer .wrap{display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between}
+@media(max-width:700px){.brand{gap:8px;font-size:21px;letter-spacing:1.05px}.brand img{width:32px;height:32px}}
+/* 当前位置：与主站一致的下划线索引 */
+.top nav [aria-current="page"]{color:var(--ink);font-weight:600;position:relative;padding-bottom:2px}
+.top nav [aria-current="page"]::after{content:"";position:absolute;left:0;right:0;bottom:-2px;height:2px;border-radius:2px;background:var(--ink)}
+/* 移动端：头部改两行（brand 独占一行、导航独占一行）。导航项一律单行不折，
+   不隐藏任何项、也不做横滑（无横向滚动、无滚动提示）。与 courses.html 的两行头部保持一致。 */
+@media(max-width:700px){
+  .top .wrap{height:auto;padding:10px 16px 0;flex-wrap:wrap;justify-content:flex-start;gap:0}
+  .top .wrap > .brand{flex:0 0 auto}
+  .top nav{order:2;width:100%;justify-content:flex-start;gap:8px;font-size:12px;
+    padding:9px 0 10px;margin-top:8px;border-top:1px solid var(--line)}
+  .top nav > *{flex:0 0 auto;white-space:nowrap;padding-block:4px}
+  /* 触控高度：22.4px 不够 WCAG 2.5.8 的 24px，纵向补 4px；不影响横排 */
+  .top nav > [aria-current="page"]{padding-bottom:4px}
+  /* 下划线与文字的距离保持贴紧（padding 变高后 ::after 需内移） */
+  .top nav [aria-current="page"]::after{bottom:2px}
+}
+/* ≤360 极窄屏：320 实测算过，gap 6→2、左右留白 16→12，6 项仍在单行内且不越界。 */
+@media(max-width:360px){
+  .top .wrap{padding:10px 12px 0}
+  .top nav{gap:2px;font-size:11px}
+}
+</style>
+<link rel="stylesheet" href="/assets/header-app.css?v=c11a72dca559">
+<script src="/assets/header-menu.js?v=f4971ced2ee9" defer></script>
+<script src="/assets/i18n.js?v=ba10533aab6f"></script>
+<script src="/assets/locale/zh.js?v=7db55d129d94"></script>
+<script defer src="/assets/asset-loader.js?v=6aec6fd65fb6"></script>
+<script defer src="/assets/language-switcher.js?v=d4550b90d72b"></script>
+<script defer src="/assets/header-account.js?v=86347d46ce4c"></script>
+</head>
+<body>
+<header class="app-header">
+  <a class="wordmark" href="/" aria-label="超智学习空间"><img class="brand-icon" src="/assets/brand/book-mark.svg" alt="" width="38" height="38"><span>SILS</span></a>
+  <nav class="desktop-nav" aria-label="主导航" data-i18n-attr="aria-label:cases.a11y.mainNav">
+    <a href="/#contents" data-i18n="nav.contents">全书目录</a>
+    <a href="/#paths" data-i18n="nav.paths">阅读路径</a>
+    <a href="/#practice" data-i18n="nav.practice">真实任务库</a>
+    <a href="/#contribute" data-i18n="nav.contribute">社区共建</a>
+    <a href="/courses.html" data-i18n="nav.courses">延伸课程</a>
+    <a href="/cases" aria-current="page" data-i18n="nav.cases">场景方案</a>
+    <a class="outline-button" href="/#chapter-1" data-i18n="nav.startReading">开始阅读</a>
+  </nav>
+  <div class="header-account-area">
+    <span class="language-switcher" data-language-switcher></span>
+    <a class="nav-icon-link" href="https://github.com/sapsapshen/ms-cookbook-3langs" target="_blank" rel="noopener noreferrer" aria-label="GitHub 项目仓库（新窗口）" data-i18n-attr="aria-label:cases.a11y.github"><img src="/assets/brand/github.svg" alt="" width="18" height="18"></a>
+    <a class="header-login" href="/auth/login?return_to=%2Fcases" aria-label="登录 SILS" data-i18n-attr="aria-label:cases.a11y.login" data-i18n="discussion.loginShort">登录</a>
+  </div>
+  <button class="mobile-menu" id="menuButton" aria-label="打开目录" data-i18n-attr="aria-label:cases.a11y.menu" aria-haspopup="dialog" aria-controls="siteMenu"><img src="/assets/paper/menu.svg" alt=""><span data-i18n="nav.menu">目录</span></button>
+</header>
+
+<div class="wrap hero">
+  <span class="kicker" data-i18n="cases.kicker">Scenarios · 场景方案</span>
+  <h1 data-i18n="cases.h1">三种最常见的需求，我们怎么交付</h1>
+  <p class="lead" data-i18n="cases.lead">
+    下面三份方案都建立在教材里已经写出来的章节上——不是 PPT 上画的概念图。
+    每一份都写清楚：用到哪几章、交付什么、多久、多少钱。
+  </p>
+  <p class="disclaimer" data-i18n-html="cases.disclaimer">
+    说明：以下为<strong>可交付方案说明</strong>，不是已签约客户的案例，也不含任何客户数据。
+    我们不会拿不存在的客户给自己背书。需要真实交付记录时，请在<strong>试听</strong>之后再谈这一点。
+  </p>
+</div>
+
+<div class="wrap">
+
+  <article class="case">
+    <div>
+      <h2 data-i18n="cases.c1.title">案例一 · 客服通话质检</h2>
+      <div class="meta">
+        <span class="chip" data-i18n="cases.c1.chip">教材对应：智能客服质检 — AI 能从一通客服电话中分析出什么</span>
+        <span class="chip" data-i18n="cases.c1.cycle">周期 3–4 周</span>
+        <span class="chip" data-i18n="cases.c1.priceChip">¥49,800 起</span>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="block">
+        <h3 data-i18n="cases.block.start">典型起点</h3>
+        <p data-i18n="cases.c1.problem">质检靠人工抽听，覆盖率不到 5%；同一个问题不同人打分不一致；想知道"客户到底为什么不满意"却没有结构化数据。</p>
+      </div>
+      <div class="block">
+        <h3 data-i18n="cases.block.what">我们做什么</h3>
+        <ul>
+          <li data-i18n="cases.c1.what1">ASR 转写 + 说话人分离，先拿到可分析文本</li>
+          <li data-i18n="cases.c1.what2">用你们的质检标准做评分维度（本书的评分标准写法可直接套）</li>
+          <li data-i18n="cases.c1.what3">一条通话输出结构化结论：问题类型、情绪走向、违规点、可引用原句</li>
+          <li data-i18n="cases.c1.what4">抽样人工复核，算出与人工判断的一致率</li>
+        </ul>
+      </div>
+      <div class="block">
+        <h3 data-i18n="cases.block.deliver">交付物</h3>
+        <ul>
+          <li data-i18n="cases.c1.deliver1">可跑通的质检流水线（部署在你们环境）</li>
+          <li data-i18n="cases.c1.deliver2">评分标准文档 + 提示词与模型配置</li>
+          <li data-i18n="cases.c1.deliver3">一致率测评报告（这是能不能上生产的关键数字）</li>
+          <li data-i18n="cases.c1.deliver4">半天交接培训</li>
+        </ul>
+      </div>
+    </div>
+    <div class="price-row">
+      <span data-i18n-html="cases.c1.price1"><b>¥49,800</b> 起 / 单场景</span>
+      <span data-i18n="cases.c1.price2">含 200 通样本调优</span>
+      <span data-i18n="cases.c1.price3">超出样本按 3 元/通计</span>
+      <span data-i18n="cases.c1.price4">前置条件：你们提供脱敏通话样本与人工标注基准</span>
+    </div>
+  </article>
+
+  <article class="case">
+    <div>
+      <h2 data-i18n="cases.c2.title">案例二 · 产线巡检 Agent</h2>
+      <div class="meta">
+        <span class="chip" data-i18n="cases.c2.chip">教材对应：产线巡检 Agent — 用 Penguin Harness 快速开发与优化</span>
+        <span class="chip" data-i18n="cases.c2.cycle">周期 4–6 周</span>
+        <span class="chip" data-i18n="cases.c2.priceChip">¥69,800 起</span>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="block">
+        <h3 data-i18n="cases.block.start">典型起点</h3>
+        <p data-i18n="cases.c2.problem">有摄像头和巡检制度，但异常靠人盯；换了新产线就要重写规则；想要 Agent 自己判断，又怕它乱下结论。</p>
+      </div>
+      <div class="block">
+        <h3 data-i18n="cases.block.what">我们做什么</h3>
+        <ul>
+          <li data-i18n="cases.c2.what1">把巡检规程拆成 Agent 可执行的判定链</li>
+          <li data-i18n="cases.c2.what2">用教材里的自进化/评估闭环做迭代：观察 → 评估 → 采纳 → 回滚</li>
+          <li data-i18n="cases.c2.what3">设定"不确定就不下结论"的兜底，异常升级到人</li>
+          <li data-i18n="cases.c2.what4">按你们现场数据跑一轮离线评估</li>
+        </ul>
+      </div>
+      <div class="block">
+        <h3 data-i18n="cases.block.deliver">交付物</h3>
+        <ul>
+          <li data-i18n="cases.c2.deliver1">巡检 Agent 与其判定规则（可回滚版本）</li>
+          <li data-i18n="cases.c2.deliver2">离线评估集与评分脚本</li>
+          <li data-i18n="cases.c2.deliver3">上线判定阈值与人工复核流程</li>
+          <li data-i18n="cases.c2.deliver4">团队带练：你们的人能自己改规则</li>
+        </ul>
+      </div>
+    </div>
+    <div class="price-row">
+      <span data-i18n-html="cases.c2.price1"><b>¥69,800</b> 起 / 单产线</span>
+      <span data-i18n="cases.c2.price2">含 2 轮评估迭代</span>
+      <span data-i18n="cases.c2.price3">多产线按 30% 递减</span>
+      <span data-i18n="cases.c2.price4">前置条件：现场影像样本与巡检规程文本</span>
+    </div>
+  </article>
+
+  <article class="case">
+    <div>
+      <h2 data-i18n="cases.c3.title">案例三 · 企业知识问答助手</h2>
+      <div class="meta">
+        <span class="chip" data-i18n="cases.c3.chip">教材对应：实现一个企业知识问答助手</span>
+        <span class="chip" data-i18n="cases.c3.cycle">周期 2–3 周</span>
+        <span class="chip" data-i18n="cases.c3.priceChip">¥29,800 起</span>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="block">
+        <h3 data-i18n="cases.block.start">典型起点</h3>
+        <p data-i18n="cases.c3.problem">文档散在网盘和群里，新人反复问同样的问题；直接上大模型又答得似是而非，说不清依据。</p>
+      </div>
+      <div class="block">
+        <h3 data-i18n="cases.block.what">我们做什么</h3>
+        <ul>
+          <li data-i18n="cases.c3.what1">文档清洗与切片，建立可检索的知识库</li>
+          <li data-i18n="cases.c3.what2">RAG 链路 + 强制引用原文出处</li>
+          <li data-i18n="cases.c3.what3">答不出来就说答不出来（这比答错便宜得多）</li>
+          <li data-i18n="cases.c3.what4">用 50 条真实问题做验收集</li>
+        </ul>
+      </div>
+      <div class="block">
+        <h3 data-i18n="cases.block.deliver">交付物</h3>
+        <ul>
+          <li data-i18n="cases.c3.deliver1">可用的问答入口（内网部署）</li>
+          <li data-i18n="cases.c3.deliver2">知识库更新流程（文档改了怎么同步）</li>
+          <li data-i18n="cases.c3.deliver3">验收集与命中率报告</li>
+          <li data-i18n="cases.c3.deliver4">管理员后台：看问了什么、答得怎么样</li>
+        </ul>
+      </div>
+    </div>
+    <div class="price-row">
+      <span data-i18n-html="cases.c3.price1"><b>¥29,800</b> 起 / 单知识域</span>
+      <span data-i18n="cases.c3.price2">含 500 份文档接入</span>
+      <span data-i18n="cases.c3.price3">增量文档按 2 元/份</span>
+      <span data-i18n="cases.c3.price4">前置条件：可提供文档与 50 条真实提问</span>
+    </div>
+  </article>
+
+  <div class="cta">
+    <a class="btn btn-primary" href="/teams#contact" data-i18n="cases.cta.primary">提交需求，24 小时内回复</a>
+    <a class="btn btn-ghost" href="/teams" data-i18n="cases.cta.secondary">看服务包与报价区间</a>
+  </div>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <span data-i18n="cases.footer.source">超智学习空间 · SILS · 教材来源 ModelScope ms-cookbook · Apache-2.0</span>
+    <a href="/" data-i18n="cases.footer.back">返回阅读站</a>
+  </div>
+</footer>
+  <dialog id="siteMenu" class="menu-dialog" aria-label="网站导航" data-i18n-attr="aria-label:a11y.siteMenu">
+  <div class="dialog-heading">
+    <a class="wordmark" href="/">SILS</a>
+    <button class="icon-button" data-close="siteMenu" aria-label="关闭目录" data-i18n-attr="aria-label:cases.a11y.close"><img src="/assets/paper/close.svg" alt=""></button>
+  </div>
+  <nav class="mobile-page-nav" aria-label="页面导航" data-i18n-attr="aria-label:cases.a11y.pageNav">
+    <a href="/" data-i18n="nav.home">首页</a>
+    <a href="/#contents" data-i18n="nav.contents">全书目录</a>
+    <a href="/#paths" data-i18n="nav.paths">阅读路径</a>
+    <a href="/#practice" data-i18n="nav.practice">真实任务库</a>
+    <a href="/#contribute" data-i18n="nav.contribute">社区共建</a>
+    <a href="/courses.html" data-i18n="nav.courses">延伸课程</a>
+    <a href="/cases" aria-current="page" data-i18n="nav.cases">场景方案</a>
+    <a href="https://github.com/sapsapshen/ms-cookbook-3langs" target="_blank" rel="noopener noreferrer"><img src="/assets/brand/github.svg" alt="" width="20" height="20">GitHub ↗</a>
+  </nav>
+</dialog>
+</body>
+</html>

@@ -10,8 +10,10 @@
   }
   const $ = s => document.querySelector(s);
   const t = window.MSI18N.t;
+  /* 词条缺失时用写死的中文兜底，绝不把键名写进页面。 */
+  const tSafe = (key, fallback) => (window.MSI18N && window.MSI18N.has && window.MSI18N.has(key)) ? t(key) : fallback;
   const el = (tag, text, cls) => { const n=document.createElement(tag); if(text)n.textContent=text; if(cls)n.className=cls; return n; };
-  let session={user:null,csrf:'',loginEnabled:false}, chapter='', blocks=[], items=[], next=null, generation=0, anchor=null, busy=false;
+  let session={user:null,csrf:'',loginEnabled:false},sessionReady=false, chapter='', blocks=[], items=[], next=null, generation=0, anchor=null, busy=false;
   const account=el('div',null,'reading-account');
   $('#headerAccountArea').append(account);
   const panel=el('section',null,'chapter-discussion'); panel.id='chapterDiscussion'; panel.setAttribute('aria-label',t('a11y.chapterDiscussion'));
@@ -93,14 +95,14 @@
     if(session.user){
       account.append(el('span',session.user.name,'account-name'));
       const logout=el('button',t('discussion.logout'));logout.type='button';logout.onclick=async()=>{try{await api('/api/logout',{method:'POST'});await refreshSession();await load();}catch(e){status.textContent=e instanceof Error&&e.message?e.message:t('error.retryLater');}};account.append(logout);
-    }else if(session.loginEnabled) account.append(loginLink(t('discussion.loginShort')));
-    else {const pending=el('span',t('discussion.loginShort'),'account-pending');pending.title=t('discussion.loginUnconfigured');pending.setAttribute('aria-disabled','true');account.append(pending);}
+    }else if(session.loginEnabled||!sessionReady) account.append(loginLink(tSafe('discussion.loginShort','登录')));
+    else {const pending=el('span',tSafe('discussion.loginShort','登录'),'account-pending');pending.title=tSafe('discussion.loginUnconfigured','');pending.setAttribute('aria-disabled','true');account.append(pending);}
     window.dispatchEvent(new CustomEvent('purplebook:session',{detail:session}));
     textarea.disabled=!session.user;submit.disabled=!session.user;
     formHint.replaceChildren(el('span',t('discussion.formHint')));
     if(!session.user) formHint.append(' ',session.loginEnabled?loginLink(t('discussion.loginCta')):el('span',t('discussion.loginLater')));
   }
-  async function refreshSession(){try{session=await api('/api/session');renderAccount();}catch(e){status.textContent=t('error.retryLater');renderAccount();}}
+  async function refreshSession(){try{session=await api('/api/session');sessionReady=true;renderAccount();}catch(e){sessionReady=true;status.textContent=t('error.retryLater');renderAccount();}}
   function chapterKey(){return location.hash.slice(1).split('?')[0].split('/')[0];}
   function collectBlocks(){
     blocks=[...$('#articleBody').querySelectorAll('p,li,h2,h3,h4,blockquote,td')].filter(n=>!n.closest('pre,.katex')&&!n.querySelector('p,li,h2,h3,h4,blockquote,td'));

@@ -32,21 +32,10 @@
     });
   }
 
+  /* 语言状态由站点共享的 i18n.js 持有（同一存储键、同一套三语）：本页不再自己
+     写存储、不再 reload、不再改 <html lang>（交给 i18n，en 统一成 en-US），只跟通知重绘。 */
   function renderHeader() {
-    var lang = currentLang();
-    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : lang;
     document.getElementById('backLink').textContent = '← ' + ui().back;
-    document.getElementById('langSwitch').innerHTML = LANGS.map(function (code) {
-      return '<button type="button" data-lang="' + code + '"' +
-        (code === lang ? ' aria-current="true" class="is-active"' : '') +
-        '>' + LANG_NAMES[code] + '</button>';
-    }).join('');
-    Array.prototype.forEach.call(document.querySelectorAll('#langSwitch button'), function (btn) {
-      btn.addEventListener('click', function () {
-        try { localStorage.setItem(STORAGE_KEY, btn.dataset.lang); } catch (_) { /* noop */ }
-        render();
-      });
-    });
   }
 
   function renderFilters() {
@@ -108,6 +97,8 @@
     document.getElementById('pageTitle').textContent = labels.pageTitle;
     document.getElementById('pageSubtitle').textContent = labels.pageSubtitle;
     document.getElementById('policy').textContent = labels.policy;
+    var sharedNoteEl = document.getElementById('sharedNote');
+    if (sharedNoteEl) sharedNoteEl.textContent = labels.sharedNote || '';
     document.getElementById('verified').textContent = labels.verified + ': ' + DATA.verifiedOn;
     renderHeader();
     renderFilters();
@@ -117,4 +108,6 @@
   if (!DATA) return;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', render);
   else render();
+  /* 头部下拉框一换语言就重绘本页正文（i18n 先写存储再通知，currentLang 读到的已是最新值）。 */
+  if (window.MSI18N) window.MSI18N.on(render);
 })();

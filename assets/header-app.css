@@ -1,0 +1,326 @@
+/* 全站统一头部（对齐首页 .app-header 的实测度量）
+   度量来源：线上 / 页在 320/360/390/768/1100/1101/1280 七档的 computed style 实测。
+   - 高度：≤700 68px；≤768 76px；≥769 86px
+   - 内边距：≤700 16px；≤768 24px；≤1240 36px；≥1241 56px
+   - 品牌：≤700 21px/字距1.05px/图标32px；≥701 24px/字距1.8px/图标38px
+   - 导航：≥1101 才显示（15px/gap22；≤1240 为 14px/gap17），≤1100 收进「目录」按钮
+   - 本文件不依赖页面 token，全部写死值，保证四页计算样式逐个相等。 */
+
+.app-header{
+  --hdr-paper:#fff;
+  --hdr-heading:#221e16;
+  --hdr-text:#3b362a;
+  --hdr-ink:#8a580c;
+  height:86px;
+  padding:0 max(56px, calc((100vw - 1240px) / 2));
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+  position:relative;
+  z-index:10;
+  background:var(--hdr-paper);
+  /* 不再画这 1px 白边（白底上看不见），否则内容盒 85px，四页基线会比首页低 0.5px */
+  box-sizing:border-box;
+  /* 与首页 body 同一字体族：拉丁语版「Sign in」在两种字体下差 2.9px，会让账户区宽度对不上 */
+  font-family:"PingFang SC","Microsoft YaHei",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+
+/* 品牌区 */
+.app-header > .wordmark{
+  display:inline-flex;
+  align-items:center;
+  gap:11px;
+  color:var(--hdr-heading);
+  font-family:"Purple Book Serif","Songti SC",STSong,serif;
+  font-size:24px;
+  font-weight:700;
+  line-height:1.3;
+  letter-spacing:1.8px;
+  text-decoration:none;
+  flex-shrink:0;
+  white-space:nowrap;
+}
+.app-header .brand-icon{width:38px;height:38px;display:block}
+
+/* 主导航（≥1101 可见） */
+.app-header .desktop-nav{
+  display:flex;
+  align-items:center;
+  gap:22px;
+  font-size:15px;
+  color:var(--hdr-text);
+}
+.app-header .desktop-nav > a{
+  padding:9px 0;
+  line-height:1.3333;            /* 与首页一致：15px 字号下行高 20px，项高 38px */
+  white-space:nowrap;
+  color:inherit;
+  text-decoration:none;
+  position:relative;
+}
+/* CTA 的横向内边距必须压过上面的 padding:9px 0（同权重时后者会赢） */
+.app-header .desktop-nav > a.outline-button{padding:9px 30px;line-height:1.3333}
+.app-header .desktop-nav > a:hover{color:#8a580c}
+.app-header .desktop-nav > a[aria-current="page"]{
+  color:#8a580c;
+  font-weight:650;
+}
+.app-header .desktop-nav > a[aria-current="page"]::after{
+  content:"";
+  position:absolute;
+  left:0;right:0;bottom:2px;
+  height:2px;
+  border-radius:2px;
+  background:#8a580c;
+}
+.app-header .outline-button{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:44px;
+  border:1px solid var(--hdr-ink);
+  border-radius:40px;
+  background:transparent;
+  color:var(--hdr-ink) !important;
+  font-weight:600;
+  font-size:15px;
+  padding:10px 30px;
+  margin-left:10px;
+  text-decoration:none;
+}
+
+/* 移动端「目录」按钮 */
+.app-header .mobile-menu{
+  display:none;
+  align-items:center;
+  gap:8px;
+  min-height:44px;
+  min-width:44px;
+  background:transparent;
+  border:0;
+  font-size:16px;
+  padding:10px 0;
+  color:var(--hdr-heading);
+  cursor:pointer;
+  font-family:inherit;
+}
+.app-header .mobile-menu img{width:22px;height:22px;display:block}
+
+/* 菜单对话框 */
+.menu-dialog{
+  color:var(--hdr-heading,#171412);
+  border:0;
+  padding:25px;
+  background:#fff;
+  width:min(440px, calc(100% - 28px));
+  max-height:88dvh;
+  border-radius:20px;
+  box-shadow:0 20px 100px rgba(23,20,18,.24);
+  margin:auto;
+}
+.menu-dialog[open]{display:block}
+.menu-dialog::backdrop{background:rgba(23,20,18,.38);backdrop-filter:blur(5px)}
+.menu-dialog .dialog-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.menu-dialog .dialog-heading .wordmark{
+  font-family:"Purple Book Serif","Songti SC",STSong,serif;
+  font-size:21px;font-weight:700;letter-spacing:1.05px;color:#221e16;text-decoration:none;
+}
+.menu-dialog .icon-button{
+  border:0;background:transparent;padding:8px;cursor:pointer;min-height:44px;min-width:44px;
+}
+.menu-dialog .icon-button img{width:20px;height:20px}
+.mobile-page-nav{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  padding:16px 0 20px;
+  border-bottom:1px solid rgba(23,20,18,.12);
+}
+.mobile-page-nav a{
+  display:flex;align-items:center;gap:8px;
+  padding:13px 12px;border-radius:7px;
+  background:#fff;color:#4a423d;font-size:16px;text-decoration:none;
+}
+.mobile-page-nav a[aria-current="page"]{background:#fdf6e6;color:#8a580c;font-weight:650}
+.mobile-page-nav a img{width:20px;height:20px;object-fit:contain}
+
+/* —— 断点（与首页同值）—— */
+@media (max-width:1240px){
+  .app-header{padding-inline:36px}
+  .app-header .desktop-nav{gap:17px;font-size:14px}
+  .app-header .outline-button{padding-inline:20px;margin:0;font-size:14px}
+  .app-header .desktop-nav > a.outline-button{padding:9px 18px}
+}
+@media (max-width:1100px){
+  .app-header{gap:12px}
+  .app-header .desktop-nav{display:none;font-size:13px;gap:14px}
+  .app-header .mobile-menu{display:flex}
+  .app-header .header-account-area{margin-left:auto}
+}
+/* 701–1100：首页这一档的「目录」按钮是 15px / padding 1px 6px / 无 44px 最小尺寸，对齐它 */
+@media (min-width:701px) and (max-width:1100px){
+  .app-header .mobile-menu{font-size:15px;padding:1px 6px;min-height:auto;min-width:auto;gap:8px}
+}
+@media (max-width:900px){
+  .app-header{height:76px;padding-inline:24px}
+}
+@media (max-width:700px){
+  .app-header{height:68px;padding-inline:16px;gap:8px}
+  .app-header > .wordmark{font-size:21px;letter-spacing:1.05px;gap:8px}
+  .app-header .brand-icon{width:32px;height:32px}
+}
+
+/* 语言切换器（放在 #siteMenu 里，与首页一致；不影响头部度量） */
+.language-switcher{display:inline-flex;align-items:center}
+
+/* 右侧账户区：与首页同位同宽（首页该区 202×38），保证导航整排横向位置不跳动。
+   含真实 GitHub 链接 + 一个不可见等宽占位（首页同位置是语言切换器，三页无对应译文）。 */
+.app-header .header-account-area{
+  display:flex;align-items:center;gap:14px;flex-shrink:0;
+}
+.app-header .header-cta{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:98px;min-height:34px;padding:6px 14px;box-sizing:border-box;
+  border:1px solid rgba(138,88,12,.35);border-radius:999px;
+  color:#8a580c;font-size:13px;font-weight:600;text-decoration:none;white-space:nowrap;
+}
+.app-header .header-cta:hover{background:#fdf6e6;border-color:#8a580c}
+.app-header .nav-icon-link{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:28px;height:34px;flex-shrink:0;border:0;background:none;padding:0;
+}
+.app-header .nav-icon-link img{width:18px;height:18px;display:block}
+/* 账户区在 701px 以上显示（与首页同一档：首页 ≤700 会隐藏语言切换器与外链），≤700 收起 */
+@media (max-width:700px){
+  .app-header .header-cta,
+  .app-header .nav-icon-link,
+  .app-header .language-picker{display:none}
+  .app-header .header-account-area{gap:0}
+}
+
+/* 登录入口：≥701 与首页 reading-account 同值（52×38）；≤700 收到 44×34，与首页移动端一致 */
+.app-header .header-login{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:52px;min-height:38px;padding:7px 12px;box-sizing:border-box;
+  border:1px solid #8a580c;border-radius:8px;
+  color:#8a580c;font-size:13px;line-height:1.4;white-space:nowrap;text-decoration:none;
+}
+.app-header .header-login:hover{background:#fdf6e6}
+@media (max-width:700px){
+  .app-header .header-login{min-width:44px;min-height:34px;padding:6px 9px;font-size:12px}
+}
+
+/* 语言下拉框：逐项照抄首页（i18n.css 的 .language-picker / .language-select）
+   胶囊 999px、1px #f5f1e6 边框、白底、4px 10px 内边距、38px 高；内层 select 无边框、
+   透明底、右侧 chevron。margin:0 压掉 /teams 页面内联的 label{margin-bottom:6px}。 */
+.app-header .language-picker{
+  display:inline-flex;align-items:center;gap:7px;flex:0 0 auto;
+  width:94px;height:38px;min-height:38px;box-sizing:border-box;
+  margin:0;padding:4px 10px;border:1px solid #f5f1e6;border-radius:999px;background:#fff;
+  color:#3b362a;font-size:16px;line-height:normal;cursor:pointer;
+}
+.app-header .language-picker:hover{border-color:#8a580c}
+.app-header .language-select{
+  appearance:none;-webkit-appearance:none;
+  display:block;width:auto;height:auto;min-width:0;margin:0;padding:2px 20px 2px 0;
+  border:0;border-radius:0;
+  background:transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a580c' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 3px center / 9px 6px;
+  color:inherit;font:inherit;font-size:13px;line-height:1.5;white-space:nowrap;cursor:pointer;
+}
+.app-header .language-select:focus-visible{outline:2px solid #8a580c;outline-offset:3px;border-radius:4px}
+@media (max-width:700px){
+  .app-header .language-picker{width:82px}
+  .app-header .language-select{height:34px;font-size:12px}
+}
+
+/* 最终覆盖：≤700 与首页一致，账户区只留登录（首页该档语言控件为 0×0、外链隐藏） */
+@media (max-width:700px){
+  .app-header .language-picker,
+  .app-header .header-cta,
+  .app-header .nav-icon-link{display:none !important}
+  .app-header .header-account-area{gap:0}
+}
+
+/* 首页同款语言控件容器（language-switcher.js 会把 label.language-picker 塞进来） */
+.app-header .language-switcher{display:inline-flex;align-items:center;flex:0 0 auto;width:94px;margin-right:4px;padding-top:0}
+@media (max-width:700px){.app-header .language-switcher{display:none !important}}
+
+/* 拉丁语版（en/es）的左右内边距与首页同值（首页 i18n.css 对 .app-header 的覆盖）：
+   1280 英文下首页账户区右边界 1152.3，三页原先 1120.3，差 32px，就是这条内边距。 */
+html:lang(en) .app-header,
+html:lang(es) .app-header{padding-inline:max(24px, calc((100vw - 1340px) / 2))}
+html:lang(en) .app-header .desktop-nav,
+html:lang(es) .app-header .desktop-nav{gap:18px}
+
+/* 拉丁语版（en/es）在 1101–1400：英文导航比中文长得多，首页在这一档收起主导航、
+   改显示「目录」按钮并把账户区右对齐。三页必须同值，否则同一语言下切 tab 会看到
+   不同的头部结构（首页没导航、三页有），且加粗的当前项会把导航推宽 6–9px。 */
+@media (min-width:1101px) and (max-width:1400px){
+  html:lang(en) .app-header .desktop-nav,
+  html:lang(es) .app-header .desktop-nav{display:none}
+  html:lang(en) .app-header .mobile-menu,
+  html:lang(es) .app-header .mobile-menu{
+    display:flex;align-items:center;gap:8px;font-size:15px;padding:1px 6px;
+    min-height:44px;min-width:44px;
+  }
+  html:lang(en) .app-header .mobile-menu img,
+  html:lang(es) .app-header .mobile-menu img{width:22px;height:22px}
+  html:lang(en) .app-header .header-account-area,
+  html:lang(es) .app-header .header-account-area{margin-left:auto}
+}
+
+/* 账户区已登录形态：照抄首页（assets/discussion.js 的 renderAccount 产物 +
+   navigation.css/discussion.css 的度量），保证登录后与首页长得一样。 */
+.app-header .reading-account{
+  display:flex;align-items:center;gap:8px;font-size:13px;white-space:nowrap;
+}
+.app-header .reading-account .account-name{
+  max-width:90px;overflow:hidden;text-overflow:ellipsis;
+  color:#3b362a;
+}
+.app-header .reading-account button{
+  border:0;background:none;padding:8px;cursor:pointer;font:inherit;color:#8a580c;
+}
+.app-header .reading-account button:disabled{opacity:.6;cursor:default}
+.app-header .reading-account button:hover{background:#fdf6e6;border-radius:8px}
+@media (max-width:1100px){
+  .app-header .reading-account{font-size:12px}
+}
+@media (max-width:700px){
+  .app-header .reading-account .account-name{max-width:60px}
+}
+
+/* 账户区宽度固定（登录前后导航零位移）：≥701 一律按「已登录宽度」占位，内容右对齐。
+   未登录 202 / 已登录 275.4 会让导航左移 37px；固定后两态同宽，导航一动不动。 */
+@media (min-width:701px){
+  .app-header .header-account-area{justify-content:flex-end;flex:0 0 auto;min-width:276px}
+  .app-header .reading-account .account-name{width:76px;text-overflow:ellipsis}
+  /* 语言相关的冻结宽度也必须在 ≥701 里：否则 320/390 的 en/es 会被撑到 302/331 */
+  html:lang(en) .app-header .header-account-area{min-width:302.3px}
+  html:lang(es) .app-header .header-account-area{min-width:331.2px}
+}
+@media (max-width:700px){
+  .app-header .header-account-area{min-width:0}
+}
+
+/* ≤700 已登录：名字列 + 退出按钮必须收得进 320 宽（en/es 的 "Sign out" 比中文宽）。
+   实测 320 en 下原样溢出 16px，收紧后与首页同值。 */
+@media (max-width:700px){
+  .app-header .reading-account{gap:6px}
+  .app-header .reading-account .account-name{max-width:40px;font-size:11px}
+  .app-header .reading-account button{padding:6px;font-size:11px}
+}
+
+/* ≤360: the same two rules that i18n.css + navigation.css carry on the home
+   page. es "Cerrar sesión" is the widest logout label; 320 must not overflow. */
+@media (max-width:360px){
+  html:lang(en) .app-header,
+  html:lang(es) .app-header{padding-inline:16px}
+  html:lang(en) .app-header .reading-account,
+  html:lang(es) .app-header .reading-account{gap:4px}
+  html:lang(en) .app-header .reading-account .account-name,
+  html:lang(es) .app-header .reading-account .account-name{max-width:32px}
+  html:lang(en) .app-header .reading-account button,
+  html:lang(es) .app-header .reading-account button{padding:5px 6px}
+}
