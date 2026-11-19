@@ -465,3 +465,40 @@ document，而监听方在 window —— 单元测试各测各的，只有 CI �
 - **前提没自检就下结论**：正文渐进渲染时 `scrollHeight` 还没长出来，`scrollTop = sh*0.25` 会被夹回 0；`scroll-behavior: smooth` 下同步读 `scrollTop` 拿到的还是旧值。这两点合起来一度让我以为"滚动不派发进度"。先打印 `scrollHeight / barWidth / pct` 再判断，结论立刻变成 `49% → 本章阅读进度 49%`。
 - **哈希差异要分两层**：`tr -d '\r'` 的比对能找内容差异，却会**盖掉换行符漂移**；`index.html` 的 `?v=` 是按 LF 内容算的，所以必须再拿 `git cat-file blob` 的哈希跟生产上的原始字节比一次，才查得出 `paper.css` / `i18n.css` / `login.css` 在服务上是 CRLF、指纹却在声明 LF 这件事。修完服务器侧 `test-exercise-wiring` 从 21/2 变 23/0。
 - **本地 `test-exercise-wiring` 的 2 条红是 Windows 假红**：`08c317a` 只把 `version-assets.mjs` 改成按 LF 算，`test-exercise-wiring.cjs` 仍按工作副本原始字节算；`.gitattributes` 声明了 `*.js/*.cjs/*.mjs/*.py/*.md` 却没管 `*.css` / `*.html`，`core.autocrlf=true` 下这些在 Windows 检出成 CRLF。在 `08c317a` 的干净 worktree 里跑同样得 21/2，失败文件名与 pin 一致 —— 与本次改动无关，也没有为了让它变绿去改那两个 CSS。
+
+## 13. 悬停说明（2026-11-19 追加）
+
+岛上的图标与数字（书签 + `43%`、莲座 + `24:58`）没有自解释力；鼠标停在岛上时应
+在鼠标旁给一句同义说明，而不是要求读者先点开。
+
+| 决策 | 结论 |
+|---|---|
+| 文案来源 | 活动的 `label`——也就是读屏拿到的那一句（文案只在 `assets/locale/*.js` 维护一份） |
+| 倒计时 | `label` 生成于活动出现那一刻，不会自走；提示从当前呈现里找 `{until}` 原子并换成现读剩余，其余活动按更新后的 label 显示 |
+| 分裂态 | `scene.label` 已经并列两条活动（`first.label, second.label`），提示原样使用 |
+| 触发 | `.island` 上的 `pointermove`，仅 `pointerType === 'mouse'`；`pointerdown`/`pointerleave`/拖动/触摸立即收起 |
+| 位置 | 提示是 `#islandRoot` 的 `position:fixed` 兄弟节点，不是 `.island` 的子节点——整岛拖动写的是 `.island` 的 transform，挂在下面会被带着偏。默认落在指针右下 `14px`，贴右/下缘翻到另一侧，再夹进视口 `8px` |
+| 尺寸 | 只在可见且文案变化时读一次 `offsetWidth/offsetHeight`；倒计时每秒只换数字，等宽字体宽度不变，`measure=false` 不读布局 |
+| 指针/读屏 | `pointer-events:none`（否则提示挡住鼠标会 leave→重弹循环）；`aria-hidden`，胶囊的 `aria-label` 本来就有同一句，不重复播报 |
+| 排版 | 最大宽 280px，长报错原因换行而不是截断；深底白字 13px |
+
+验收：`scripts/test-island.cjs` 的「悬停提示：鼠标旁说明岛内内容，跟手、会翻边、
+离开/触摸即收」覆盖弹出、跟手、右/下缘翻边、悬停期间倒计时刷新、岛收起后消失、
+触摸不触发；CSS 契约断言覆盖 `pointer-events:none` 与 `[hidden]{display:none}`。
+
+### 13.1 生产部署（2026-11-19，`http://120.53.222.178:8899`）
+
+沿用 PM2 + tar 流程，只动本功能的四个文件；`index.html` 在服务端就地改两处 `?v=`
+指纹，保留服务器独有的企业入口/`/cases`/`/teams` 内容（这些不在本地 Git 树里）。
+
+| 项 | 值 |
+|---|---|
+| 备份 | `backups/source-before-island-hint-20261119-090705.tar.gz`（136M） |
+| 同步 | `assets/island.js`、`assets/island.css`、`scripts/test-island.cjs`、本设计文档 |
+| 指纹 | `island.js?v=6eb9569f4c20`、`island.css?v=6b657b8ce3d5` |
+| 预检 | 服务端 `test-island` 79、`test-asset-loading` 14、`test-motion` 23、`test-i18n`、`test-ci-coverage`、`pytest test_static_delivery + test_production_hardening` 27 全绿 |
+| 重启 | `pm2 restart ms-cookbook --update-env`；`restart_time` 16→17，PID 3295978 online |
+| 线上 | `/`、`/api/session` 200；生产 `island.js`/`island.css` SHA-256 与本地逐字节一致 |
+| 浏览器 | 真实 Chrome：提示距指针 `13.997/14.002px`，文本 `专注剩余 24:58`（`aria-label` 仍 `25:00`），移开即 `hidden` |
+
+回滚：解开上述备份 + `pm2 restart ms-cookbook --update-env`。

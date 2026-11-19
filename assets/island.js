@@ -905,9 +905,18 @@
     node.expandedBottom = el('div', 'island-region', { 'data-slot': 'bottom' });
     node.expanded.append(row, node.expandedBottom);
     node.live = el('p', 'island-live', { role: 'status', 'aria-live': 'polite' });
+    // 悬停提示挂在 root 而不是 island 上：island 整岛拖动时改的是自己的
+    // transform，fixed 定位的提示若挂在它下面会跟着岛一起偏；挂 root 才真正
+    // 贴着鼠标。提示不接收指针，否则会挡住鼠标、触发 leave，来回闪。
+    node.hint = el('div', 'island-hint', { 'aria-hidden': 'true' });
+    node.hint.hidden = true;
     island.append(node.frost, node.shape, node.sensor, node.pill, node.bubble, node.expanded, node.live);
     root.appendChild(island);
+    root.appendChild(node.hint);
 
+    node.region.addEventListener('pointermove', hintMove);
+    node.region.addEventListener('pointerleave', hideHint);
+    node.region.addEventListener('pointerdown', hideHint);
     node.pill.addEventListener('pointerdown', () => press('hold'));
     node.pill.addEventListener('pointerup', () => release());
     node.pill.addEventListener('keydown', event => {
@@ -928,7 +937,7 @@
       });
     }
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-      window.addEventListener('resize', () => setDrag(dragX, dragY));
+      window.addEventListener('resize', () => { setDrag(dragX, dragY); placeHint(); });
     }
     return island;
   }
@@ -1109,6 +1118,92 @@
     return n;
   };
 
+  // ---- 悬停提示：鼠标旁一句话说明"岛现在显示的是什么" ----
+  // 文案取活动的 label——读屏拿到的也是同一句，不再维护第二套说明。label 是
+  // 活动出现那一刻的字符串，倒计时不会自己走，所以显示时把 label 里的 mm:ss
+  // 换成现读的剩余；其余活动（进度、报错、完成汇报）本来只在数值变化时才更新
+  // label。
+  // 提示是 fixed 层，只写 transform；只在可见且文案真的变了时读一次尺寸，
+  // 不逐帧读（逐帧读就是设计文档里记过的那条强制重排）。
+  const HINT_GAP = 14;
+  const HINT_MARGIN = 8;
+  let hintPoint = { x: 0, y: 0 };
+  let hintVisible = false;
+  let hintText = '';
+  let hintSize = { width: 0, height: 0 };
+
+  const timeAtomIn = value => {
+    if (!value || typeof value !== 'object') return null;
+    if (Array.isArray(value)) {
+      for (const item of value) { const found = timeAtomIn(item); if (found !== null) return found; }
+      return null;
+    }
+    if (Number.isFinite(value.until)) return value;
+    for (const key of Object.keys(value)) {
+      const found = timeAtomIn(value[key]);
+      if (found !== null) return found;
+    }
+    return null;
+  };
+
+  const hintTextFor = scene => {
+    if (!scene || !scene.label) return '';
+    const atom = timeAtomIn(scene.presentation);
+    if (atom === null) return scene.label;
+    const format = atom.format || 'mm:ss';
+    return scene.label.replace(/\d+:\d\d(?::\d\d)?/, formatMs(Math.max(0, atom.until - wallNow()), format));
+  };
+
+  const placeHint = () => {
+    if (!node.hint || !hintVisible) return;
+    const { width: viewWidth, height: viewHeight } = viewportSize();
+    let x = hintPoint.x + HINT_GAP;
+    let y = hintPoint.y + HINT_GAP;
+    // 贴右缘/下缘时翻到鼠标另一侧，再夹进视口；鼠标在岛内但岛可能在拖到边上。
+    if (x + hintSize.width > viewWidth - HINT_MARGIN) x = hintPoint.x - HINT_GAP - hintSize.width;
+    if (y + hintSize.height > viewHeight - HINT_MARGIN) y = hintPoint.y - HINT_GAP - hintSize.height;
+    const maxX = Math.max(HINT_MARGIN, viewWidth - hintSize.width - HINT_MARGIN);
+    const maxY = Math.max(HINT_MARGIN, viewHeight - hintSize.height - HINT_MARGIN);
+    node.hint.style.transform =
+      `translate3d(${clamp(x, HINT_MARGIN, maxX).toFixed(2)}px, ${clamp(y, HINT_MARGIN, maxY).toFixed(2)}px, 0)`;
+  };
+
+  function hideHint() {
+    hintVisible = false;
+    if (node.hint) node.hint.hidden = true;
+  }
+
+  // measure=false 用于自走倒计时：每秒只有数字变，等宽字体下宽度不变，省掉
+  // 一次布局读取。内容换脸（暂停、报错、完成）走 measure=true。
+  const refreshHint = (scene, measure) => {
+    if (!hintVisible || !node.hint) return;
+    const text = hintTextFor(scene);
+    if (!text) { hideHint(); return; }
+    if (text === hintText && !measure) return;
+    hintText = text;
+    node.hint.textContent = text;
+    if (measure) hintSize = { width: node.hint.offsetWidth, height: node.hint.offsetHeight };
+    placeHint();
+  };
+
+  const hintMove = event => {
+    // 触屏没有 hover；按住拖动时提示也跟着手指走，纯属捣乱。
+    if (event.pointerType !== 'mouse' || dragId !== null) { hideHint(); return; }
+    hintPoint = { x: event.clientX, y: event.clientY };
+    const text = hintTextFor(deriveScene(state));
+    if (!text) { hideHint(); return; }
+    if (!hintVisible) {
+      hintVisible = true;
+      node.hint.hidden = false;
+    }
+    if (text !== hintText) {
+      hintText = text;
+      node.hint.textContent = text;
+      hintSize = { width: node.hint.offsetWidth, height: node.hint.offsetHeight };
+    }
+    placeHint();
+  };
+
   // ---- 命中区与盒 ----
   // 每帧把弹簧算出的盒写到节点上：pill/bubble/expanded 都是 fixed 岛内部的
   // 绝对定位元素，重排范围只有这几个节点，不触及正文。内容的左右位置交给
@@ -1203,12 +1298,14 @@
       timeAtom = null;
       paintSlots(scene);
       if (alerting.size) node.live.textContent = scene.label;
+      refreshHint(scene, true);
     } else if (timeAtom) {
       // 只在显示的那一秒真的变了才写：每帧写 textContent 会白白让胶囊重排 60 次/秒。
       const text = formatMs(Math.max(0, timeAtom.spec.until - wallNow()), timeAtom.spec.format || 'mm:ss');
       if (text !== timeAtom.text) {
         timeAtom.text = text;
         timeAtom.node.textContent = text;
+        refreshHint(scene, false);
       }
     }
   };

@@ -731,7 +731,7 @@ function mountWithDom(options) {
     matchMedia: () => ({ matches: false, addEventListener() {} })
   });
   let now = 0;
-  Island.mount(root, { clock: () => now });
+  Island.mount(root, { clock: () => now, wall: o.wall });
   const advance = seconds => {
     const target = now + seconds;
     while (now < target) { now = Math.min(target, now + 1 / 60); Island.internals.tick(now); }
@@ -771,6 +771,47 @@ check('胶囊的读屏名来自活动 label，分裂时并列', () => {
   Island.start({ id: 't', label: '专注剩余 24 分 58 秒', group: 'focus', priority: 1, compact: { trailing: { text: '24:58' } } });
   Island.internals.tick(0.2);
   assert.match(findDeep(root, 'button').attrs['aria-label'], /专注剩余 24 分 58 秒, 本章阅读进度 43%/);
+});
+
+check('悬停提示：鼠标旁说明岛内内容，跟手、会翻边、离开/触摸即收', () => {
+  let wall = 1_000_000;
+  const { Island, root } = mountWithDom({ wall: () => wall });
+  Island.start({
+    id: 't', label: '专注剩余 25:00', group: 'focus', priority: 1,
+    compact: { leading: { glyph: 'lotus' }, trailing: { until: wall + 125_000, format: 'mm:ss' } }
+  });
+  Island.internals.tick(0.2);
+  const region = findDeep(root, '.island');
+  const hint = findDeep(root, '.island-hint');
+  assert.ok(hint, '没有悬停提示节点');
+  assert.equal(hint.hidden, true, '没悬停时提示必须收着');
+  // 桩里 setAttribute 不写 hidden 属性，量尺寸的默认值也没布局；给提示一个
+  // 真实尺寸，才能验证右/下缘翻边。
+  Object.defineProperty(hint, 'offsetWidth', { get: () => 300, configurable: true });
+  Object.defineProperty(hint, 'offsetHeight', { get: () => 120, configurable: true });
+
+  fire(region, 'pointermove', { pointerType: 'mouse', clientX: 1100, clientY: 700 });
+  assert.equal(hint.hidden, false, '鼠标移到岛上应弹出提示');
+  // label 是开跑那一刻生成的；提示读的是现刻剩余，不能显示 25:00。
+  assert.equal(hint.textContent, '专注剩余 2:05');
+  let at = hint.style.transform.match(/-?\d+\.\d+/g).map(Number);
+  assert.deepEqual(at, [786, 566], '提示应在鼠标左上侧翻出，而不是越出视口');
+
+  fire(region, 'pointermove', { pointerType: 'mouse', clientX: 200, clientY: 150 });
+  at = hint.style.transform.match(/-?\d+\.\d+/g).map(Number);
+  assert.deepEqual(at, [214, 164], '提示必须跟着鼠标走');
+
+  // 悬停不动时倒计时也在走：提示里的秒数要跟着刷新。
+  wall += 5_000;
+  Island.internals.tick(0.05);
+  assert.equal(hint.textContent, '专注剩余 2:00', '悬停期间提示停在旧秒数');
+
+  Island.end('t');
+  Island.internals.tick(0.05);
+  assert.equal(hint.hidden, true, '岛收起后提示也要消失');
+
+  fire(region, 'pointermove', { pointerType: 'touch', clientX: 100, clientY: 100 });
+  assert.equal(hint.hidden, true, '触摸移动不是悬停');
 });
 
 check('七个内容原子各自出 DOM', () => {
@@ -955,6 +996,9 @@ check('island.css 压住 header、只在阅读视图出现、打印时消失', (
   assert.match(css, /\.island-pill\[hidden\][^{]*\{[^}]*display:\s*none/s);
   assert.match(css, /body\[data-view="reader"\] #islandRoot\s*\{\s*display:\s*block/);
   assert.match(css, /@media print\s*\{\s*#islandRoot\s*\{\s*display:\s*none;?\s*\}\s*\}/);
+  // 悬停提示不能吃指针（否则自己把自己遮走），且 hidden 必须真的不占位。
+  assert.match(css, /\.island-hint\s*\{[^}]*pointer-events:\s*none/s);
+  assert.match(css, /\.island-hint\[hidden\]\s*\{\s*display:\s*none;?\s*\}/);
   // 淡底磨砂、深墨字、常显发丝边：三件缺一件都会在某个底色上看不清。
   assert.match(css, /\.island-frost-layer\s*\{[^}]*backdrop-filter:\s*blur\(/s);
   // 裁形每帧在 JS 里写（外层 wrapper），CSS 只负责两层盒的定位。

@@ -220,6 +220,31 @@ body[data-view="reader"] #islandRoot { display: block; }
 .island-btn:focus-visible { outline: 2px solid var(--island-ink); outline-offset: 2px; }
 @media (pointer: coarse) { .island-btn { min-height: 44px; } }
 
+/* 悬停提示：跟着鼠标走的一句说明。fixed 到视口，不跟着整岛 transform 偏；
+   不接收指针，免得提示挡住鼠标→leave→再出现地闪。定位只写 transform，
+   尺寸由内容决定；长报错换行，不裁掉原因。 */
+.island-hint {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  max-width: 280px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(22, 22, 22, .92);
+  color: #fff;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  white-space: normal;
+  overflow-wrap: break-word;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(20, 20, 20, .18);
+  will-change: transform;
+}
+.island-hint[hidden] { display: none; }
+
 /* 读屏播报：可视上不可见，但必须真的在 DOM 里。 */
 .island-live {
   position: absolute;
