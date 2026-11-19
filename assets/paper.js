@@ -126,7 +126,7 @@
      a reader sitting in a chapter does not pay for a grid they cannot see. */
   const EXERCISE_BUNDLE = ['assets/exercises.js?v=7bdee4a556ba', 'assets/exercise-grader.js?v=3c6548035306',
     'assets/exercise-store.js?v=60f13f8a96a2', 'assets/exercise-sandbox.js?v=248ef0a7613b',
-    'assets/exercise-map.js?v=93478189a6bf', 'assets/exercise-ui.js?v=593aee14f535'];
+    'assets/exercise-map.js?v=93478189a6bf', 'assets/exercise-ui.js?v=42809127f630'];
   function ensureExerciseBundle() { return window.AssetLoader.loadSequence(EXERCISE_BUNDLE); }
   /* The practice view has nothing to show until 1.2 MB of modules land, so its
      status line goes into the map's own container -- and carries role="status",
