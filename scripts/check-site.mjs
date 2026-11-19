@@ -32,6 +32,22 @@ function imageSize(buffer){
   return null;
 }
 let imageCount=0,attachmentCount=0;
+/* FastAPI 把企业页从 assets/ 供在根路径;链接检查要按同一张路由表落地,
+   否则 /cases、/teams 这类合法链接会被当成缺失的本地文件。 */
+const pageRoutes=new Map([
+  ['/','index.html'],
+  ['/index.html','index.html'],
+  ['/index.htm','index.html'],
+  ['/cases','assets/cases.html'],
+  ['/cases.html','assets/cases.html'],
+  ['/teams','assets/teams.html'],
+  ['/teams.html','assets/teams.html'],
+  ['/courses','courses.html'],
+  ['/courses.html','courses.html'],
+  ['/analytics','assets/analytics.html'],
+  ['/login','login.html'],
+  ['/auth/login','login.html'],
+]);
 function checkLinks(html,base='.'){
   for(const tag of html.matchAll(/<(?:a|img|script|link)\b[^>]*>/g))for(const m of tag[0].matchAll(/(?:src|href)="([^"]+)"/g)){
     const url=m[1];
@@ -39,6 +55,12 @@ function checkLinks(html,base='.'){
     if(/^#chapter-/.test(url))assert(ids.has(url.slice(1).split('/')[0]),'Unknown chapter '+url);
     if(/^(?:[a-z]+:|#|\/\/)/i.test(url))continue;
     const path=decodeURIComponent(url.split(/[?#]/)[0]);
+    if(path.startsWith('/')){
+      const target=pageRoutes.get(path);
+      assert(target,'Unknown local route '+path);
+      assert(existsSync(resolve(root,target)),'Missing local file '+target);
+      continue;
+    }
     if(path)assert(existsSync(resolve(root,base,path)),'Missing local file '+path);
   }
 }
