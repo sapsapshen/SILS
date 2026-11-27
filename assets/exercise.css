@@ -121,6 +121,16 @@
   color: var(--text);
 }
 .exercise-solution pre { margin: .3rem 0; overflow-x: auto; }
+.exercise-reference, .exercise-explanation { margin-top: .7rem; }
+.exercise-reference h4, .exercise-explanation h4 {
+  margin: 0 0 .3rem;
+  font-size: .78rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--text);
+}
+.exercise-reference { padding-bottom: .7rem; border-bottom: 1px solid var(--border); }
+.exercise-explanation p { margin: 0; white-space: pre-line; }
 /* A fieldset, not a div: four bare checkboxes reach a screen reader as four
    unrelated controls with no statement of what they answer. The legend is what
    carries that.

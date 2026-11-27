@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN" data-i18n-title="admin.pageTitle">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f7c13b">
+  <meta name="robots" content="noindex,nofollow">
+  <link rel="icon" href="/assets/brand/book-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/i18n.css?v=fb1a351970a2">
+  <link rel="stylesheet" href="/assets/admin.css?v=1">
+  <title>学习管理后台｜超智学习空间</title>
+</head>
+<body>
+  <div class="admin-shell">
+    <header class="admin-header">
+      <a class="admin-brand" href="/"><img src="/assets/brand/book-mark.svg" alt="" width="30" height="30"><span>SILS</span></a>
+      <div class="admin-header-actions"><span class="language-switcher" data-language-switcher></span><a class="admin-back" href="/" data-i18n="admin.back">← 返回阅读站</a></div>
+    </header>
+    <main class="admin-main">
+      <h1 data-i18n="admin.title">学习管理后台</h1>
+      <p class="admin-intro" data-i18n="admin.intro">仅管理员可见：注册用户、练习完成情况与笔记统计。</p>
+      <p class="admin-status" id="adminStatus" role="status" aria-live="polite" data-i18n="admin.loading">正在加载…</p>
+      <section class="admin-metrics" aria-label="学习概况">
+        <article><span data-i18n="admin.statLearners">注册用户</span><strong id="adminLearners">—</strong></article>
+        <article><span data-i18n="admin.statExercises">练习总数</span><strong id="adminExercises">—</strong></article>
+        <article><span data-i18n="admin.statPassed">累计通过</span><strong id="adminPassed">—</strong></article>
+        <article><span data-i18n="admin.statHighlights">划线总数</span><strong id="adminHighlights">—</strong></article>
+      </section>
+      <section class="admin-table-wrap">
+        <table class="admin-table">
+          <thead><tr>
+            <th scope="col" data-i18n="admin.colName">用户</th>
+            <th scope="col" data-i18n="admin.colEmail">邮箱</th>
+            <th scope="col" data-i18n="admin.colProgress">练习完成</th>
+            <th scope="col" data-i18n="admin.colHighlights">划线</th>
+            <th scope="col" data-i18n="admin.colComments">评论</th>
+            <th scope="col" data-i18n="admin.colLastLogin">最近登录</th>
+          </tr></thead>
+          <tbody id="adminLearnersBody"></tbody>
+        </table>
+        <p class="admin-empty" id="adminEmpty" hidden data-i18n="admin.empty">还没有注册用户。</p>
+      </section>
+    </main>
+  </div>
+  <script src="/assets/i18n.js?v=ba10533aab6f"></script>
+  <script src="/assets/locale/zh.js?v=7db55d129d94"></script>
+  <script src="/assets/locale/en.js?v=c5f178583523"></script>
+  <script src="/assets/locale/es.js?v=0d2776c2a952"></script>
+  <script src="/assets/language-switcher.js?v=d4550b90d72b"></script>
+  <script src="/assets/admin-dashboard.js?v=1"></script>
+</body>
+</html>

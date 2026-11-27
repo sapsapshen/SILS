@@ -31,7 +31,7 @@
       code/selfAssessed. Nothing here decides a conflict itself, and a pull
       can never lower what the reader already earned.
 
-   LOCALE. All 28 `exercise.*` keys this file asks for are written in all
+   LOCALE. All 30 `exercise.*` keys this file asks for are written in all
    three languages in assets/locale/*.js, so MSI18N.t() resolves every one of
    them and the panel never shows a bare key. The four that arrived with the
    accessibility and option-parsing work -- the last ones to be filled in --
@@ -518,8 +518,21 @@
   function renderSolution(exercise, host) {
     const details = el('details', null, 'exercise-solution');
     details.append(el('summary', t('exercise.solution')));
-    if (exercise.reference) details.append(el('pre', exercise.reference));
-    if (exercise.explanation) details.append(el('p', exercise.explanation));
+    // Reference answer and explanation are separate, labelled blocks. Rendering
+    // them back to back made a long answer and its explanation look like one
+    // paragraph, and readers could not tell which text was the graded answer.
+    if (exercise.reference) {
+      const block = el('div', null, 'exercise-reference');
+      block.append(el('h4', t('exercise.referenceLabel')));
+      block.append(el('pre', exercise.reference));
+      details.append(block);
+    }
+    if (exercise.explanation) {
+      const block = el('div', null, 'exercise-explanation');
+      block.append(el('h4', t('exercise.explanationLabel')));
+      block.append(el('p', exercise.explanation));
+      details.append(block);
+    }
     host.append(details);
   }
 

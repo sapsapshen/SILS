@@ -33,6 +33,13 @@ def login(client, email=ADMIN_EMAIL, password=ADMIN_PASSWORD, return_to='#home')
     }, headers={'origin': BASE})
 
 
+def register(client, email='reader@example.com', password='reader-pass-123', name='新读者', return_to='#chapter-1'):
+    csrf = client.get('/api/session').json()['csrf']
+    return client.post('/api/auth/register', json={
+        'email': email, 'password': password, 'display_name': name, 'return_to': return_to,
+    }, headers={'origin': BASE, 'x-csrf-token': csrf})
+
+
 def test_password_hash_roundtrip():
     encoded = hash_password(ADMIN_PASSWORD)
     assert encoded.startswith('scrypt$')
@@ -122,3 +129,75 @@ def test_inactive_account_cannot_login(tmp_path):
     with store._db() as db:
         db.execute('UPDATE accounts SET is_active=0')
     assert store.authenticate(ADMIN_EMAIL, ADMIN_PASSWORD) is None
+
+
+def test_register_creates_reader_and_signs_in(site):
+    client = TestClient(site[0], base_url=BASE)
+    response = register(client)
+    assert response.status_code == 200
+    assert response.json()['return_to'] == '/#chapter-1'
+    state = client.get('/api/session').json()
+    assert state['user']['name'] == '新读者'
+    assert state['user']['moderator'] is False
+    assert site[0].state.accounts.has_account('reader@example.com')
+
+
+def test_register_rejects_duplicate_email_weak_password_and_bad_requests(site):
+    client = TestClient(site[0], base_url=BASE)
+    assert register(client).status_code == 200
+    assert register(client).status_code == 409
+    assert register(client, email='weak@example.com', password='short1').status_code == 422
+    assert register(client, email='weak@example.com', password='letters-only').status_code == 422
+    assert register(client, email='not-an-email', password='reader-pass-123').status_code == 422
+    csrf = client.get('/api/session').json()['csrf']
+    payload = {'email': 'evil@example.com', 'password': 'reader-pass-123', 'return_to': '#home'}
+    assert client.post('/api/auth/register', json=payload,
+                       headers={'origin': 'https://evil.example', 'x-csrf-token': csrf}).status_code == 403
+    assert client.post('/api/auth/register', json=payload,
+                       headers={'origin': BASE}).status_code == 403
+    assert not site[0].state.accounts.has_account('evil@example.com')
+
+
+def test_registered_reader_can_save_a_highlight(site):
+    client = TestClient(site[0], base_url=BASE)
+    assert register(client).status_code == 200
+    csrf = client.get('/api/session').json()['csrf']
+    response = client.post('/api/chapters/chapter-1/entries', json={
+        'kind': 'highlight', 'text': '', 'quote': '开源模型', 'block': 0, 'start': 0, 'end': 4,
+    }, headers={'origin': BASE, 'x-csrf-token': csrf})
+    assert response.status_code == 201
+    items = client.get('/api/chapters/chapter-1/entries').json()['items']
+    assert any(item['kind'] == 'highlight' and item['mine'] for item in items)
+
+
+def test_admin_learners_is_admin_only_and_counts_registered_users(site):
+    client = TestClient(site[0], base_url=BASE)
+    assert client.get('/api/admin/learners').status_code == 401
+    assert register(client).status_code == 200
+    csrf = client.get('/api/session').json()['csrf']
+    assert client.post('/api/chapters/chapter-1/entries', json={
+        'kind': 'highlight', 'text': '', 'quote': '开源模型', 'block': 0, 'start': 0, 'end': 4,
+    }, headers={'origin': BASE, 'x-csrf-token': csrf}).status_code == 201
+    assert client.get('/api/admin/learners').status_code == 403
+    assert login(client).status_code == 200
+    report = client.get('/api/admin/learners').json()
+    assert report['total'] == 2
+    assert report['exerciseCount'] >= 98
+    reader = next(item for item in report['learners'] if item['email'] == 'reader@example.com')
+    assert reader['role'] == 'reader' and reader['highlights'] == 1
+    assert client.get('/admin').status_code == 200
+    assert client.get('/api/session').json()['user']['moderator'] is True
+
+
+def test_analytics_sensitive_detail_is_admin_only_but_summary_stays_public(site):
+    client = TestClient(site[0], base_url=BASE)
+    assert client.get('/api/analytics/summary').status_code == 200
+    assert client.get('/api/analytics/hourly').status_code == 200
+    assert client.get('/api/analytics/detailed').status_code == 401
+    assert register(client).status_code == 200
+    assert client.get('/api/analytics/detailed').status_code == 403
+    assert login(client).status_code == 200
+    detailed = client.get('/api/analytics/detailed').json()
+    assert detailed['rows'] == []
+    progress = client.get('/api/certificate/progress').json()
+    assert progress['total'] >= 98 and progress['signedIn'] is True

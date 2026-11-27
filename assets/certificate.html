@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN" data-i18n-title="certificate.pageTitle">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f7c13b">
+  <meta name="description" content="根据练习完成度生成的结业纪念证书（非官方认证）。">
+  <link rel="icon" href="/assets/brand/book-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/i18n.css?v=fb1a351970a2">
+  <style>
+  :root{--ink:#171412;--muted:#6d655d;--line:rgba(23,20,18,.14);--brand:#8a580c;--paper:#fffdf8;--canvas:#f6f3ec}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--canvas);color:var(--ink);font:16px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif}
+  a{color:var(--brand)}
+  .cert-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px clamp(18px,4vw,48px);border-bottom:1px solid var(--line);background:#fff}
+  .cert-brand{display:inline-flex;align-items:center;gap:10px;font-weight:600;letter-spacing:.12em;color:inherit;text-decoration:none}
+  .cert-brand img{width:30px;height:30px}
+  .cert-header-actions{display:flex;align-items:center;gap:16px}
+  .cert-back{font-size:14px;text-decoration:none}
+  .cert-main{width:min(860px,calc(100% - 36px));margin:0 auto;padding:36px 0 60px}
+  .cert-status{min-height:1.5em;font-size:14px;color:var(--muted)}
+  .cert-card{position:relative;margin-top:18px;padding:clamp(28px,6vw,64px);background:var(--paper);border:1px solid var(--line);border-radius:18px;box-shadow:0 12px 40px rgba(23,20,18,.06);text-align:center}
+  .cert-card::before{content:"";position:absolute;inset:10px;border:1px solid rgba(138,88,12,.35);border-radius:12px;pointer-events:none}
+  .cert-kicker{font:600 12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.2em;color:var(--brand);text-transform:uppercase}
+  .cert-card h1{margin:10px 0 6px;font-size:clamp(28px,5vw,42px);font-family:"Songti SC",STSong,Georgia,serif;letter-spacing:.04em}
+  .cert-subtitle{margin:0 0 26px;color:var(--muted);font-size:14px}
+  .cert-name{margin:12px 0;font-size:clamp(22px,4vw,30px);font-weight:600;border-bottom:1px solid var(--line);display:inline-block;padding:0 28px 8px}
+  .cert-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:24px 0 18px}
+  .cert-facts div span{display:block;font-size:12px;color:var(--muted)}
+  .cert-facts div strong{display:block;margin-top:4px;font-size:20px}
+  .cert-bar{height:8px;border-radius:99px;background:rgba(23,20,18,.08);overflow:hidden;max-width:420px;margin:0 auto}
+  .cert-bar span{display:block;height:100%;width:0;background:var(--brand);border-radius:99px;transition:width .4s ease}
+  .cert-note{margin:22px auto 0;max-width:62ch;font-size:12px;color:var(--muted);line-height:1.7}
+  .cert-actions{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:24px}
+  .cert-actions button,.cert-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 20px;border:1px solid var(--brand);border-radius:999px;background:var(--brand);color:#fff;font:inherit;font-size:14px;text-decoration:none;cursor:pointer}
+  .cert-actions a{background:transparent;color:var(--brand)}
+  @media(max-width:520px){.cert-header{padding-inline:14px}.cert-main{width:calc(100% - 20px)}}
+  @media print{
+    body{background:#fff}
+    .cert-header,.cert-actions,.cert-status{display:none!important}
+    .cert-main{width:100%;padding:0}
+    .cert-card{border:0;box-shadow:none;margin:0}
+  }
+  </style>
+  <title>结业纪念证书｜超智学习空间</title>
+</head>
+<body>
+  <header class="cert-header">
+    <a class="cert-brand" href="/"><img src="/assets/brand/book-mark.svg" alt="" width="30" height="30"><span>SILS</span></a>
+    <div class="cert-header-actions"><span class="language-switcher" data-language-switcher></span><a class="cert-back" href="/" data-i18n="certificate.back">← 返回阅读站</a></div>
+  </header>
+  <main class="cert-main">
+    <p class="cert-status" id="certStatus" role="status" aria-live="polite"></p>
+    <article class="cert-card" id="certCard">
+      <p class="cert-kicker">SUPER INTELLIGENCE LEARNING SPACE</p>
+      <h1 data-i18n="certificate.title">结业纪念证书</h1>
+      <p class="cert-subtitle" data-i18n="certificate.subtitle">根据练习完成度自动生成</p>
+      <div class="cert-name" id="certName">—</div>
+      <div class="cert-facts">
+        <div><span data-i18n="certificate.progressLabel">已完成练习</span><strong id="certProgress">—</strong></div>
+        <div><span data-i18n="certificate.chaptersLabel">覆盖章节</span><strong id="certChapters">—</strong></div>
+        <div><span data-i18n="certificate.dateLabel">生成日期</span><strong id="certDate">—</strong></div>
+      </div>
+      <div class="cert-bar" aria-hidden="true"><span id="certBarFill"></span></div>
+      <p class="cert-note" data-i18n="certificate.disclaimer">本页面为学习纪念，非官方认证或职业资格凭证，不涉及收费考位，也不作为高校或机构录取依据。</p>
+      <div class="cert-actions">
+        <button type="button" id="certPrint" data-i18n="certificate.print">打印 / 保存为 PDF</button>
+        <a href="/auth/login?return_to=%2Fcertificate" id="certLogin" hidden data-i18n="discussion.loginShort">登录</a>
+      </div>
+    </article>
+  </main>
+  <script src="/assets/i18n.js?v=ba10533aab6f"></script>
+  <script src="/assets/locale/zh.js?v=7db55d129d94"></script>
+  <script src="/assets/locale/en.js?v=c5f178583523"></script>
+  <script src="/assets/locale/es.js?v=0d2776c2a952"></script>
+  <script src="/assets/language-switcher.js?v=d4550b90d72b"></script>
+  <script src="/assets/certificate.js?v=1"></script>
+</body>
+</html>

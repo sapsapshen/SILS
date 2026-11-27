@@ -70,6 +70,11 @@ def to_markdown(article, number):
         if tag == 'img':
             alt = escape(node.get('alt', ''))
             return f'![{alt}](<{destination(node.get("src", ""))}>)'
+        if tag == 'video':
+            # The reader embeds a native player; GitHub gets a plain link so the
+            # exported chapter keeps pointing at the same clip.
+            label = escape(node.get('aria-label') or '视频片段')
+            return f'[{label}](<{destination(node.get("src", ""))}>)'
         if tag == 'a':
             return f'[{children(node)}](<{destination(node.get("href", ""))}>)'
         if tag == 'br':

@@ -126,7 +126,7 @@
      a reader sitting in a chapter does not pay for a grid they cannot see. */
   const EXERCISE_BUNDLE = ['assets/exercises.js?v=7bdee4a556ba', 'assets/exercise-grader.js?v=3c6548035306',
     'assets/exercise-store.js?v=60f13f8a96a2', 'assets/exercise-sandbox.js?v=248ef0a7613b',
-    'assets/exercise-map.js?v=93478189a6bf', 'assets/exercise-ui.js?v=42809127f630'];
+    'assets/exercise-map.js?v=93478189a6bf', 'assets/exercise-ui.js?v=699d407e5395'];
   function ensureExerciseBundle() { return window.AssetLoader.loadSequence(EXERCISE_BUNDLE); }
   /* The practice view has nothing to show until 1.2 MB of modules land, so its
      status line goes into the map's own container -- and carries role="status",
@@ -343,8 +343,8 @@
   function setPager(node,chapter) {
     node.classList.toggle('disabled',!chapter);
     node.setAttribute('aria-disabled',String(!chapter));
-    if(chapter){node.href='#'+chapter.id;node.removeAttribute('tabindex');const text=node.querySelector('span');if(text)text.textContent=chapterTitle(chapter);}
-    else {node.removeAttribute('href');node.tabIndex=-1;}
+    if(chapter){node.href='#'+chapter.id;node.removeAttribute('tabindex');const text=node.querySelector('span');if(text)text.textContent=chapterTitle(chapter);const hint=node.querySelector('.pager-next-hint');if(hint)hint.hidden=false;}
+    else {node.removeAttribute('href');node.tabIndex=-1;const hint=node.querySelector('.pager-next-hint');if(hint)hint.hidden=true;}
   }
   function closeDialogs() {$$('dialog[open]').forEach(d=>d.close());document.body.classList.remove('modal-open');}
   function openDialog(id) {
@@ -385,6 +385,23 @@
     notice.hidden=window.MSI18N.lang==='zh'||translated;
     if(!notice.hidden)notice.textContent=t('reader.translationNotice',{language:t('common.languageName')});
   }
+  function renderChapterVideos() {
+    const section=$('#chapterVideoList'), list=$('#chapterVideoItems');
+    if(!section||!list)return;
+    const players=$$('#articleBody video.article-video-player');
+    list.textContent='';
+    players.forEach((player,index)=>{
+      const id='chapter-video-'+(index+1);
+      player.id=id;
+      const link=document.createElement('a');
+      link.href='#'+id;
+      link.textContent=player.getAttribute('aria-label')||t('reader.chapterVideos')+' '+(index+1);
+      const item=document.createElement('li');
+      item.append(link);
+      list.append(item);
+    });
+    section.hidden=players.length===0;
+  }
   function renderChapter(chapter) {
     currentChapter=chapter;
     const index=data.chapters.indexOf(chapter);
@@ -397,6 +414,7 @@
     $('#chapterEdit').href=chapter.editUrl;
     $('#articleBody').innerHTML=chapter.html;
     applyArticleTranslation(chapter);
+    renderChapterVideos();
     // Chapter-tail extension cards. Optional on purpose: the reader must keep
     // working if the catalogue fails to load, so the call is presence-checked.
     if(window.renderChapterCourses)window.renderChapterCourses(chapter);

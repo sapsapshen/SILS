@@ -8,6 +8,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
+import re
 
 try:
     import psycopg
@@ -21,6 +22,8 @@ SCRYPT_R = 8
 SCRYPT_P = 1
 SCRYPT_DKLEN = 32
 SCRYPT_MAXMEM = 64 * 1024 * 1024
+MIN_PASSWORD_LENGTH = 8
+EMAIL_PATTERN = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 
 ACCOUNTS_SCHEMA = '''
 CREATE TABLE IF NOT EXISTS accounts(
@@ -168,6 +171,54 @@ class AccountsStore:
                 self._q('SELECT 1 FROM accounts WHERE email=?'), (normalize_email(email),)
             ).fetchone()
         return row is not None
+
+    def create_account(self, email, password, display_name=''):
+        """Self-service sign-up. Returns the new reader, or None if the email exists.
+
+        Validation lives here rather than in the route so a future caller cannot
+        accidentally bypass the password rules. The insert is the real duplicate
+        guard: a pre-check alone races when two requests arrive together.
+        """
+        self.ensure_ready()
+        email = normalize_email(email)
+        if not EMAIL_PATTERN.fullmatch(email):
+            raise ValueError('邮箱格式不正确')
+        password = str(password or '')
+        if len(password) < MIN_PASSWORD_LENGTH or len(password) > 200:
+            raise ValueError(f'密码长度需为 {MIN_PASSWORD_LENGTH}–200 个字符')
+        if not re.search(r'[A-Za-z]', password) or not re.search(r'\d', password):
+            raise ValueError('密码需同时包含字母和数字')
+        name = str(display_name or '').strip()[:100] or email.split('@', 1)[0][:100]
+        now = int(time.time())
+        account = {
+            'id': secrets.token_hex(16), 'email': email,
+            'password_hash': hash_password(password), 'display_name': name,
+            'role': 'reader', 'is_active': 1, 'created_at': now, 'updated_at': now,
+        }
+        unique_errors = [sqlite3.IntegrityError]
+        pg_errors = getattr(psycopg, 'errors', None)
+        if pg_errors is not None:
+            unique_errors.append(pg_errors.UniqueViolation)
+        try:
+            with self._db() as conn:
+                conn.execute(
+                    self._q('''INSERT INTO accounts(id,email,password_hash,display_name,role,is_active,created_at,updated_at)
+                               VALUES(?,?,?,?,?,1,?,?)'''),
+                    (account['id'], email, account['password_hash'], name, 'reader', now, now),
+                )
+        except tuple(unique_errors):
+            return None
+        return account
+
+    def list_accounts(self):
+        """Account rows for the admin dashboard; never includes password hashes."""
+        self.ensure_ready()
+        with self._db() as conn:
+            rows = conn.execute(
+                self._q('SELECT id,email,display_name,role,is_active,created_at,last_login_at '
+                        'FROM accounts ORDER BY created_at DESC')
+            ).fetchall()
+        return [dict(row) for row in rows]
 
 
 class LoginLimiter:

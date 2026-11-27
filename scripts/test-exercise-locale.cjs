@@ -93,6 +93,7 @@ const KEYS = [
   'exercise.codeLabel',
   'exercise.correct',
   'exercise.elapsed',
+  'exercise.explanationLabel',
   'exercise.headerCount',
   'exercise.incorrect',
   'exercise.loading',
@@ -100,6 +101,7 @@ const KEYS = [
   'exercise.mapTotal',
   'exercise.optionPlaceholder',
   'exercise.optionsUnparsed',
+  'exercise.referenceLabel',
   'exercise.reflectLabel',
   'exercise.reflectPlaceholder',
   'exercise.reset',
@@ -151,8 +153,8 @@ function keysUsedInCode() {
   return used;
 }
 
-test('29 个 exercise 词条三语齐备', () => {
-  assert.equal(KEYS.length, 29, `清单应为 29 个 key，实际 ${KEYS.length}`);
+test('31 个 exercise 词条三语齐备', () => {
+  assert.equal(KEYS.length, 31, `清单应为 31 个 key，实际 ${KEYS.length}`);
   const all = dictionaries();
   for (const key of KEYS) {
     for (const language of ['zh', 'en', 'es']) {

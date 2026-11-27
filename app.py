@@ -31,7 +31,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
 
-from accounts import AccountsStore, LoginLimiter
+from accounts import AccountsStore, LoginLimiter, normalize_email
 
 ROOT = Path(__file__).resolve().parent
 LOGGER = logging.getLogger(__name__)
@@ -239,6 +239,12 @@ class Wish(BaseModel):
 class LocalLogin(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=200)
+    return_to: str = Field(default='#home', max_length=200)
+
+class Registration(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=8, max_length=200)
+    display_name: str = Field(default='', max_length=100)
     return_to: str = Field(default='#home', max_length=200)
 
 class AnalyticsView(BaseModel):
@@ -497,6 +503,7 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
     local_login_enabled = accounts_store is not None
     login_limiter = LoginLimiter(limit=10)
     login_ip_limiter = LoginLimiter(limit=30)
+    register_ip_limiter = LoginLimiter(limit=8, window=3600)
     if accounts_store:
         try:
             accounts_store.ensure_ready()
@@ -616,6 +623,11 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
         return secrets.compare_digest(origin, request_origin)
     def is_moderator(u):
         return bool(u and (u.get('role') == 'admin' or u['sub'] in admins))
+    def require_admin(request):
+        u = user(request)
+        if not u: raise HTTPException(401,'请先登录')
+        if not is_moderator(u): raise HTTPException(403,'需要管理员权限')
+        return u
     def public_user(u):
         return {'id':u['id'],'name':u['name'],'moderator':is_moderator(u)} if u else None
     def safe_return_to(value):
@@ -838,6 +850,81 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
             'updatedAt':current.isoformat(timespec='seconds'),
         }
 
+    @app.get('/api/admin/learners')
+    def admin_learners(request: Request):
+        """Admin-only roster: accounts joined with their practice and notes."""
+        require_admin(request)
+        if not accounts_store: raise HTTPException(503,'账号服务尚未配置')
+        try:
+            accounts=accounts_store.list_accounts()
+        except Exception:
+            LOGGER.exception('Could not list accounts for the admin dashboard')
+            raise HTTPException(503,'账号服务暂时不可用，请稍后重试')
+        with db() as conn:
+            stats={row['sub']:dict(row) for row in conn.execute('''
+                SELECT u.sub,
+                  (SELECT COUNT(*) FROM entries e WHERE e.user_id=u.id AND e.kind='highlight') highlights,
+                  (SELECT COUNT(*) FROM entries e WHERE e.user_id=u.id AND e.kind='comment') comments,
+                  (SELECT COUNT(*) FROM entries e WHERE e.user_id=u.id AND e.kind='annotation') annotations,
+                  (SELECT COUNT(*) FROM exercise_progress p WHERE p.user_id=u.id) attempted,
+                  (SELECT COUNT(*) FROM exercise_progress p WHERE p.user_id=u.id AND p.passed=1) passed,
+                  (SELECT COUNT(DISTINCT p.chapter||'/'||p.exercise) FROM exercise_progress p
+                    WHERE p.user_id=u.id AND (p.passed=1 OR p.self_assessed IN ('pass','partial'))) completed
+                FROM users u''')}
+        learners=[]
+        for account in accounts:
+            row=stats.get('local:'+account['email'],{})
+            learners.append({
+                'email':account['email'], 'name':account['display_name'],
+                'role':'admin' if account['role']=='admin' else 'reader',
+                'isActive':bool(account['is_active']),
+                'createdAt':account['created_at'], 'lastLoginAt':account['last_login_at'],
+                'highlights':row.get('highlights',0), 'comments':row.get('comments',0),
+                'annotations':row.get('annotations',0), 'attempted':row.get('attempted',0),
+                'passed':row.get('passed',0), 'completed':row.get('completed',0),
+            })
+        return {'total':len(learners),'exerciseCount':len(exercise_ids),'learners':learners,
+                'generatedAt':datetime.now(analytics_timezone).isoformat(timespec='seconds')}
+
+    @app.get('/api/analytics/detailed')
+    def analytics_detailed(request: Request, days: int = Query(7,ge=1,le=90), start: str = '', end: str = ''):
+        """Per-page daily counts. Admin only: the public summary/hourly stay open."""
+        require_admin(request)
+        today,first,last,span=analytics_range(days,start,end)
+        def read():
+            with analytics_db() as conn:
+                rows=conn.execute('''SELECT day,page,SUM(pv) pv FROM analytics_page_daily
+                    WHERE day BETWEEN ? AND ? GROUP BY day,page ORDER BY day,page''',
+                    (first.isoformat(),last.isoformat())).fetchall()
+            return [dict(row) for row in rows]
+        return {'range':{'start':first.isoformat(),'end':last.isoformat(),'days':span},
+                'rows':use_analytics_database(read)}
+
+    @app.get('/api/certificate/progress')
+    def certificate_progress(request: Request):
+        """Commemorative certificate input, derived from existing progress rows."""
+        u=user(request)
+        total=len(exercise_ids)
+        if not u: return {'signedIn':False,'total':total,'completed':0,'chapters':0,'name':''}
+        with db() as conn:
+            rows=conn.execute('SELECT chapter,exercise,passed,self_assessed FROM exercise_progress WHERE user_id=?',(u['id'],)).fetchall()
+        done={(row['chapter'],row['exercise']) for row in rows
+              if row['passed'] or row['self_assessed'] in ('pass','partial')}
+        return {'signedIn':True,'total':total,'completed':len(done),
+                'chapters':len({chapter for chapter,_ in done}),'name':u['name']}
+
+    def start_local_session(request, email, name, role, target):
+        now=int(time.time()); sid=secrets.token_urlsafe(32)
+        sub='local:'+email
+        with db() as conn:
+            conn.execute('INSERT INTO users(id,sub,name,role) VALUES(?,?,?,?) ON CONFLICT(sub) DO UPDATE SET name=excluded.name, role=excluded.role',(secrets.token_hex(16),sub,name,role))
+            uid=conn.execute('SELECT id FROM users WHERE sub=?',(sub,)).fetchone()['id']
+            conn.execute('DELETE FROM sessions WHERE expires<=? OR id=?',(now,request.session.get('sid','')))
+            conn.execute('INSERT INTO sessions VALUES (?,?,?)',(sid,uid,now+7*86400))
+        request.session.clear()
+        request.session.update(sid=sid,csrf=secrets.token_urlsafe(32))
+        return {'ok':True,'return_to':return_to_url(target)}
+
     @app.get('/auth/login')
     async def login(request: Request, return_to: str = '#home'):
         target=safe_return_to(return_to)
@@ -873,19 +960,34 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
             login_ip_limiter.fail(ip_bucket); login_limiter.fail(account_bucket)
             raise HTTPException(401,'邮箱或密码不正确')
         login_ip_limiter.clear(ip_bucket); login_limiter.clear(account_bucket)
-        now=int(time.time()); sid=secrets.token_urlsafe(32)
-        sub='local:'+email
         name=str(account.get('display_name') or email)[:100]
         role='admin' if account.get('role')=='admin' else 'reader'
-        with db() as conn:
-            conn.execute('INSERT INTO users(id,sub,name,role) VALUES(?,?,?,?) ON CONFLICT(sub) DO UPDATE SET name=excluded.name, role=excluded.role',(secrets.token_hex(16),sub,name,role))
-            uid=conn.execute('SELECT id FROM users WHERE sub=?',(sub,)).fetchone()['id']
-            conn.execute('DELETE FROM sessions WHERE expires<=? OR id=?',(now,request.session.get('sid','')))
-            conn.execute('INSERT INTO sessions VALUES (?,?,?)',(sid,uid,now+7*86400))
-        target=safe_return_to(payload.return_to)
-        request.session.clear()
-        request.session.update(sid=sid,csrf=secrets.token_urlsafe(32))
-        return {'ok':True,'return_to':return_to_url(target)}
+        return start_local_session(request,email,name,role,safe_return_to(payload.return_to))
+
+    @app.post('/api/auth/register')
+    def register(payload: Registration, request: Request):
+        """Self-service sign-up with the same-origin + CSRF contract as writing notes."""
+        if not local_login_enabled: raise HTTPException(503,'注册尚未配置')
+        require_same_origin(request)
+        csrf=request.headers.get('x-csrf-token','')
+        if not csrf or not secrets.compare_digest(csrf, request.session.get('csrf','')):
+            raise HTTPException(403,'页面已过期，请刷新后重试')
+        email=normalize_email(payload.email)
+        address=request.client.host if request.client else 'unknown'
+        if register_ip_limiter.blocked('ip:'+address):
+            raise HTTPException(429,'注册太频繁，请稍后再试')
+        try:
+            account=accounts_store.create_account(email,payload.password,payload.display_name)
+        except ValueError as error:
+            register_ip_limiter.fail('ip:'+address)
+            raise HTTPException(422,str(error)) from error
+        except Exception:
+            LOGGER.exception('Account database is unavailable')
+            raise HTTPException(503,'注册服务暂时不可用，请稍后重试')
+        if not account:
+            register_ip_limiter.fail('ip:'+address)
+            raise HTTPException(409,'该邮箱已注册，请直接登录')
+        return start_local_session(request,email,account['display_name'],'reader',safe_return_to(payload.return_to))
 
     @app.get('/auth/callback')
     async def callback(request: Request):
@@ -1356,6 +1458,14 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
     def courses_page(): return FileResponse(ROOT/'courses.html',headers={'Cache-Control':'no-cache'})
     @app.get('/analytics')
     def analytics_page(): return FileResponse(ROOT/'assets/analytics.html',headers={'Cache-Control':'no-store'})
+    @app.get('/admin')
+    def admin_page(request: Request):
+        u=user(request)
+        if not u: return RedirectResponse('/auth/login?return_to=%2Fadmin',status_code=303)
+        if not is_moderator(u): raise HTTPException(403,'需要管理员权限')
+        return FileResponse(ROOT/'assets/admin.html',headers={'Cache-Control':'no-store'})
+    @app.get('/certificate')
+    def certificate_page(): return FileResponse(ROOT/'assets/certificate.html',headers={'Cache-Control':'no-store'})
     @app.get('/favicon.svg')
     def favicon(): return FileResponse(ROOT/'favicon.svg')
     @app.get('/favicon.ico')

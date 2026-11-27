@@ -27,6 +27,12 @@ h1{font-size:clamp(28px,4.2vw,42px);line-height:1.2;margin:0 0 16px;letter-spaci
 .lead{font-size:17px;color:var(--ink-2);max-width:64ch;margin:0 0 22px}
 .disclaimer{background:var(--warn-bg);border:1px solid rgba(138,90,0,.22);color:var(--warn);
   border-radius:14px;padding:14px 16px;font-size:14px;margin:0 0 8px}
+.language-scope{font-size:13px;color:var(--ink-2);margin:10px 0 0}
+.course-prices{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;margin:22px 0 0}
+.course-prices h2{font-size:20px;margin:0 0 14px}
+.course-prices ul{margin:0;padding-left:18px;font-size:14px;color:var(--ink-2)}
+.course-prices li{margin:5px 0}
+.course-prices .course-note{font-size:12px;color:var(--ink-2);margin:12px 0 0}
 .case{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:26px;margin:20px 0;
   display:grid;gap:16px}
 .case h2{margin:0;font-size:22px;letter-spacing:-.01em}
@@ -109,6 +115,16 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between}
     说明：以下为<strong>可交付方案说明</strong>，不是已签约客户的案例，也不含任何客户数据。
     我们不会拿不存在的客户给自己背书。需要真实交付记录时，请在<strong>试听</strong>之后再谈这一点。
   </p>
+  <p class="language-scope" data-i18n="cases.languageScope">界面与练习提供简体中文 / English / Español；章节正文以中文为主，部分章节提供英/西译文。</p>
+  <section class="course-prices" aria-labelledby="coursePricingTitle">
+    <h2 id="coursePricingTitle" data-i18n="cases.coursePricingTitle">课程报价（标准 / 定制 / 周期）</h2>
+    <ul>
+      <li data-i18n="cases.courseStandard">标准课程：¥69.9 / 门，最多 20 名用户；付费前先赠送部分章节试听。</li>
+      <li data-i18n="cases.courseCustom">定制化课程（单独）：¥4,988 / 门，最多 300 名用户；不设重修时限。</li>
+      <li data-i18n="cases.courseCycle">定制化课程（周期）：按课程数目与人数定制报价。</li>
+    </ul>
+    <p class="course-note" data-i18n="cases.courseNote">以上为课程报价；下方三个场景为交付项目，按项目范围另行报价。</p>
+  </section>
 </div>
 
 <div class="wrap">
@@ -246,6 +262,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between}
 <footer>
   <div class="wrap">
     <span data-i18n="cases.footer.source">超智学习空间 · SILS · 教材来源 ModelScope ms-cookbook · Apache-2.0</span>
+    <a href="/certificate" data-i18n="footer.certificate">结业纪念证书</a>
     <a href="/" data-i18n="cases.footer.back">返回阅读站</a>
   </div>
 </footer>

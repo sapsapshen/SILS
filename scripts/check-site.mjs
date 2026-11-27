@@ -45,6 +45,8 @@ const pageRoutes=new Map([
   ['/courses','courses.html'],
   ['/courses.html','courses.html'],
   ['/analytics','assets/analytics.html'],
+  ['/admin','assets/admin.html'],
+  ['/certificate','assets/certificate.html'],
   ['/login','login.html'],
   ['/auth/login','login.html'],
 ]);

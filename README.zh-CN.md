@@ -5,7 +5,7 @@
 </p>
 
 <h1 align="center">超智学习空间</h1>
-<p align="center"><strong>魔搭紫皮书的三语阅读站。</strong></p>
+<p align="center"><strong>魔搭紫皮书阅读站：界面与练习三语，正文以中文为主。</strong></p>
 <p align="center">简体中文 · English · Español</p>
 
 <p align="center">
@@ -28,7 +28,7 @@
 
 ## 项目介绍
 
-**超智学习空间（SILS）是这本实战手册的三语阅读站。** 章节来自魔搭紫皮书，围绕真实任务介绍模型选型、推理运行、数据准备、微调评测与应用开发。站点界面、章节正文和练习会一起在简体中文、English、Español 之间切换。语言控件在页眉；窄屏时收进菜单。选择记在这台浏览器里，登录页和访问统计页使用同一次选择。
+**超智学习空间（SILS）是这本实战手册的阅读站，界面与练习提供三语。** 章节来自魔搭紫皮书，围绕真实任务介绍模型选型、推理运行、数据准备、微调评测与应用开发。站点界面与练习在简体中文、English、Español 之间切换；章节正文以中文为主，部分章节提供英/西译文，并非全文三语。语言控件在页眉；窄屏时收进菜单。选择记在这台浏览器里，登录页和访问统计页使用同一次选择。
 
 从“模型可以下载”到“模型真正用起来”，中间还有一系列具体问题：业务需求该选哪类模型？现有硬件能跑多大规模？如何用自己的数据微调？效果提升该怎样验证？本书结合 **EvalScope、ms-swift、DiffSynth、Ollama** 等工具，以及 RAG 与 Agent 工作流，把这些选择与动手操作衔接起来。
 
@@ -221,6 +221,6 @@ node scripts/check-site.mjs
 
 ## 开源协议
 
-本仓库采用 [Apache License 2.0](LICENSE)。正文源自 [ModelScope ms-cookbook](https://github.com/modelscope/ms-cookbook)，上游同样采用 Apache-2.0；本三语版本在书数据中保留上游源链接，并在网站页脚保留上游署名。若再打包、改编或商业分发，必须同时保留许可证与上游名称/来源，详见 [NOTICE](NOTICE)。书中引用的模型、数据集与工具适用各自的许可证及使用条款；正文图片和附件的权利归原作者或相应权利人所有。
+本仓库采用 [Apache License 2.0](LICENSE)。正文源自 [ModelScope ms-cookbook](https://github.com/modelscope/ms-cookbook)，上游同样采用 Apache-2.0；本版本在书数据中保留上游源链接，并在网站页脚保留上游署名。若再打包、改编或商业分发，必须同时保留许可证与上游名称/来源，详见 [NOTICE](NOTICE)。书中引用的模型、数据集与工具适用各自的许可证及使用条款；正文图片和附件的权利归原作者或相应权利人所有。
 
 第三方组件保留各自许可证：[KaTeX · MIT](assets/katex/LICENSE)、[Remix Icon · Apache 2.0](assets/home/REMIX-LICENSE)、[Noto Serif SC · SIL OFL 1.1](assets/home/NOTO-LICENSE.txt)、[搭搭 · MIT](assets/dada/LICENSE)。详见[搭搭来源声明](assets/dada/NOTICE.md)、[网站素材说明](assets/paper/ATTRIBUTION.txt)、[共用素材说明](assets/home/ATTRIBUTION.txt)与[插画说明](assets/review/ATTRIBUTION.md)。

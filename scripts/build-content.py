@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CONTENT = ROOT / 'content'
 REPO = 'https://github.com/modelscope/ms-cookbook'
 SHORT_PARTS = ['认识开源模型', '从问题出发', '让模型工作起来', '微调与评测', '业务系统实践', 'AIGC 特别篇', 'Agent 特别篇', '基础知识补充']
-SAFE = set('article p br hr h1 h2 h3 h4 h5 h6 ul ol li blockquote pre code strong em b i s del sup sub table thead tbody tr th td colgroup col a img span div figure u'.split())
+SAFE = set('article p br hr h1 h2 h3 h4 h5 h6 ul ol li blockquote pre code strong em b i s del sup sub table thead tbody tr th td colgroup col a img video span div figure u'.split())
 
 def image_size(path):
     """Return (width, height) for a PNG or WebP, or None when the header is unreadable.

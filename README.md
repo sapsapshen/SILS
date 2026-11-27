@@ -5,7 +5,7 @@
 </p>
 
 <h1 align="center">Super Intelligence Learning Space</h1>
-<p align="center"><strong>A three-language reading site for the open-source model cookbook.</strong></p>
+<p align="center"><strong>A reading site for the open-source model cookbook: interface and exercises in three languages.</strong></p>
 <p align="center">超智学习空间 · 简体中文 · English · Español</p>
 
 <p align="center">
@@ -28,7 +28,7 @@
 
 ## Overview
 
-**Super Intelligence Learning Space (SILS, 超智学习空间) is the three-language reading site for this cookbook.** The chapters are the ModelScope Cookbook (魔搭紫皮书): model selection, inference, data preparation, fine-tuning, evaluation, and application development in one structured path. The site shell, chapter prose, and exercises switch together among 简体中文, English, and Español. The control sits in the header and, on a narrow screen, inside the menu. The choice is stored in this browser and also applies to the sign-in page and the analytics dashboard.
+**Super Intelligence Learning Space (SILS, 超智学习空间) is the reading site for this cookbook, with a three-language interface and three-language exercises.** The chapters are the ModelScope Cookbook (魔搭紫皮书): model selection, inference, data preparation, fine-tuning, evaluation, and application development in one structured path. The site shell and exercises switch among 简体中文, English, and Español. Chapter prose is mainly Chinese: some chapters also have English/Spanish translations, but most do not. The control sits in the header and, on a narrow screen, inside the menu. The choice is stored in this browser and also applies to the sign-in page and the analytics dashboard.
 
 A useful model application starts with practical decisions: which model fits the task, what hardware it needs, how to adapt it to your data, and how to judge the result. The cookbook connects these decisions to runnable examples, using tools such as **EvalScope, ms-swift, DiffSynth, and Ollama**, alongside RAG and Agent workflows.
 
@@ -221,6 +221,6 @@ The workflow uses the repository secret `MODELSCOPE_API_KEY`, synchronizes commi
 
 ## License
 
-This repository uses the [Apache License 2.0](LICENSE). The chapter text is derived from the [ModelScope ms-cookbook](https://github.com/modelscope/ms-cookbook), also Apache-2.0; this three-language edition keeps the upstream source links in the book data and the upstream attribution in the site footer. If you repackage or sell an adapted edition, keep both the licence and the upstream name/source visible — see [NOTICE](NOTICE). Referenced models, datasets, and tools have their own licenses and terms. Chapter images and attachments remain subject to the rights of their authors or respective rights holders.
+This repository uses the [Apache License 2.0](LICENSE). The chapter text is derived from the [ModelScope ms-cookbook](https://github.com/modelscope/ms-cookbook), also Apache-2.0; this edition keeps the upstream source links in the book data and the upstream attribution in the site footer. If you repackage or sell an adapted edition, keep both the licence and the upstream name/source visible — see [NOTICE](NOTICE). Referenced models, datasets, and tools have their own licenses and terms. Chapter images and attachments remain subject to the rights of their authors or respective rights holders.
 
 Bundled third-party components retain their licenses: [KaTeX · MIT](assets/katex/LICENSE), [Remix Icon · Apache 2.0](assets/home/REMIX-LICENSE), [Noto Serif SC · SIL OFL 1.1](assets/home/NOTO-LICENSE.txt), and [Dada · MIT](assets/dada/LICENSE). See the [Dada notice](assets/dada/NOTICE.md), [site attribution](assets/paper/ATTRIBUTION.txt), [shared asset attribution](assets/home/ATTRIBUTION.txt), and [artwork notes](assets/review/ATTRIBUTION.md).

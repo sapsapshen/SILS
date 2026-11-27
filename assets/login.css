@@ -122,6 +122,22 @@
   font-size: 12px;
   line-height: 1.7;
 }
+.register-section {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid var(--hair);
+}
+.register-section h2 {
+  margin: 0 0 6px;
+  font-size: 19px;
+  font-weight: 600;
+}
+.register-intro {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
 .login-back {
   justify-self: center;
   color: var(--muted);
