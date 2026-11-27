@@ -2,7 +2,8 @@ fastapi>=0.162.5,<1
 authlib>=1.9.5,<2
 # Starlette 1 and Authlib import httpx2 and only fall back to httpx with a
 # deprecation warning. The call shape used here (post, status_code, json) matches.
-httpx2>=2.16,<3
+# 2.16+ needs Python 3.11; 3.10 hosts stay on 2.14 via the app.py fallback.
+httpx2>=2.14,<3
 itsdangerous>=2.2,<3
 psycopg[binary]>=3.3.9,<4
 uvicorn>=0.54,<1

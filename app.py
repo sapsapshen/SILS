@@ -3,7 +3,10 @@ from contextlib import asynccontextmanager, closing, contextmanager
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
-import httpx2 as httpx
+try:
+    import httpx2 as httpx
+except ImportError:  # Python 3.10 hosts can only install httpx2 < 2.16
+    import httpx
 import json
 import logging
 import mimetypes
