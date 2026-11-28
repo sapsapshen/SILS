@@ -90,7 +90,7 @@
   // the Chinese source, so searching works in whichever language the reader picked.
   function buildSearchIndex() {
     return new Map(data.chapters.map(c => {
-      const holder = document.createElement('div'); holder.innerHTML = c.html;
+      const holder = new DOMParser().parseFromString(c.html, 'text/html');
       const translated = window.MSI18N.has(chapterKey(c)) ? ' '+t(chapterKey(c)) : '';
       // Translated prose is indexed too, so search works in the picked language.
       const map = articleMap(c.id);
@@ -194,7 +194,7 @@
   let bookSearchTimer;
   function createBookSearchDocuments() {
     return data.chapters.flatMap(chapter => {
-      const holder=document.createElement('div');holder.innerHTML=chapter.html;
+      const holder=new DOMParser().parseFromString(chapter.html,'text/html').body;
       const headings=new Map(chapter.headings.filter(h=>h.text.trim()).map(h=>[h.id,h]));
       const base={chapterId:chapter.id,number:chapter.number,title:chapterTitle(chapter),status:chapter.status};
       let section={...base,headingId:'',heading:'',text:[]};
