@@ -71,7 +71,9 @@
   const SCENE_ART = {16:'fitness',17:'service',18:'speech',19:'knowledge',23:'product'};
   const SCENE_TYPE = {16:'scene.type.vision',17:'scene.type.speechAnalysis',18:'scene.type.speech',19:'scene.type.rag',23:'scene.type.aigc'};
   const arrow = '<img class="arrow" src="assets/home/arrow.svg" alt="">';
-  const artSource = art => `assets/editorial-art/${art}.png`;
+  // WebP at quality 82 cuts each illustration from ~850KB to ~22KB; the PNG
+  // originals stay in the repo but are no longer on the first-paint path.
+  const artSource = art => `assets/editorial-art/${art}.webp`;
   let currentChapter = null;
   let currentView = '';
   let currentPathKey = '';
@@ -104,7 +106,7 @@
     $$('.quiet-footer').forEach(el=>{if(!el.querySelector('.project-links'))el.insertAdjacentHTML('beforeend',`<div class="project-links">${markup}</div>`);});
   }
   function renderHomePaths() {
-    $('#homePaths').innerHTML = Object.entries(paths).map(([key,p]) => `<article><a class="path-art-link" href="#paths/${key}" aria-label="${esc(p.name)}"><img src="${artSource(p.art)}" alt="" width="400" height="250"></a><h3>${esc(p.name)}</h3><p class="path-brief">${esc(p.brief)}</p><p>${esc(p.steps)}</p><a class="text-link" href="#paths/${key}">${esc(p.link)} ${arrow}</a></article>`).join('');
+    $('#homePaths').innerHTML = Object.entries(paths).map(([key,p]) => `<article><a class="path-art-link" href="#paths/${key}" aria-label="${esc(p.name)}"><img src="${artSource(p.art)}" alt="" width="400" height="250" loading="lazy" decoding="async"></a><h3>${esc(p.name)}</h3><p class="path-brief">${esc(p.brief)}</p><p>${esc(p.steps)}</p><a class="text-link" href="#paths/${key}">${esc(p.link)} ${arrow}</a></article>`).join('');
   }
   function renderScenes() {
     $('#sceneGrid').innerHTML = Object.keys(SCENE_ART).map(id => {
@@ -125,8 +127,8 @@
      contents), and it is guarded by the router's own `view === 'practice'`, so
      a reader sitting in a chapter does not pay for a grid they cannot see. */
   const EXERCISE_BUNDLE = ['assets/exercises.js?v=7bdee4a556ba', 'assets/exercise-grader.js?v=3c6548035306',
-    'assets/exercise-store.js?v=60f13f8a96a2', 'assets/exercise-sandbox.js?v=248ef0a7613b',
-    'assets/exercise-map.js?v=93478189a6bf', 'assets/exercise-ui.js?v=699d407e5395'];
+    'assets/exercise-store.js?v=60f13f8a96a2', 'assets/exercise-sandbox.js?v=391e1f909e14',
+    'assets/exercise-map.js?v=93478189a6bf', 'assets/exercise-ui.js?v=fae659f7ef02'];
   function ensureExerciseBundle() { return window.AssetLoader.loadSequence(EXERCISE_BUNDLE); }
   /* The practice view has nothing to show until 1.2 MB of modules land, so its
      status line goes into the map's own container -- and carries role="status",
@@ -519,8 +521,21 @@
     articleTop = rect.top + window.scrollY;
     articleHeight = Math.max(1, article.offsetHeight - window.innerHeight);
   }
-  function updateProgress() {
-    if(currentView!=='reader')return;
+  let routeNotice=null;
+  let routeNoticeTimer=0;
+  function showRouteNotice(message){
+    if(!routeNotice){
+      routeNotice=document.createElement('p');
+      routeNotice.className='route-notice';
+      routeNotice.setAttribute('role','status');
+      document.body.append(routeNotice);
+    }
+    routeNotice.textContent=message;
+    routeNotice.hidden=false;
+    clearTimeout(routeNoticeTimer);
+    routeNoticeTimer=setTimeout(()=>{routeNotice.hidden=true;},4000);
+  }
+  function updateProgress() {    if(currentView!=='reader')return;
     // scrollY and the cached box are the only inputs: no layout property is read,
     // so a scroll event cannot force a layout of a 400k-word document. Heading
     // highlighting is not here -- it belongs to the observer, which reports the
@@ -534,6 +549,14 @@
     // Preserve community links published before the route was named contribute.
     if(location.hash==='#community')history.replaceState(null,'','#contribute');
     const {name,sub,pathKey}=parseHash(location.hash,paths);
+    // An unknown route used to render the home page without a word, which looks
+    // like the link worked and quietly lost the reader. Say so, then park the
+    // address at #home so a refresh does not repeat the detour.
+    if(location.hash && location.hash!=='#home' && !chapters.has(name)
+       && !['contents','paths','practice','contribute','home'].includes(name)){
+      showRouteNotice(tSafe('route.notFound','这个链接已经失效，已回到首页。'));
+      history.replaceState(null,'','#home');
+    }
     const previousPage=currentView==='reader'?currentChapter?.id:currentView;
     const pathChanged=currentPathKey!==pathKey;
     currentPathKey=pathKey;

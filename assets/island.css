@@ -274,3 +274,11 @@ body[data-view="reader"] #islandRoot { display: block; }
 }
 
 @media print { #islandRoot { display: none; } }
+
+/* The island floats above the reader header (z 60 vs 40), which on a narrow
+   screen put the capsule straight over the search field. Below 700px it sits
+   under the sticky header instead of on top of it; any open dialog hides it. */
+@media (max-width: 700px) {
+  body[data-view="reader"] #islandRoot { top: calc(var(--reader-header-height, 60px) + 8px); }
+}
+body:has(dialog[open]) #islandRoot { display: none; }

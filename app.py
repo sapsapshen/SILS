@@ -254,6 +254,21 @@ class AnalyticsView(BaseModel):
     page: str = Field(min_length=1, max_length=64)
     visitor: str = Field(min_length=16, max_length=128, pattern=r'^[A-Za-z0-9_-]+$')
 
+class LeadSubmission(BaseModel):
+    """A sales enquiry from /teams or /cases.
+
+    Kept deliberately narrow: the public form has no session, so every field is
+    bounded and the endpoint stores exactly what it is given. `interest` is a
+    short slug rather than free text because the admin list renders it as a
+    badge; the reader's own words belong in `note`.
+    """
+    name: str = Field(min_length=1, max_length=80)
+    email: str = Field(min_length=3, max_length=254)
+    org: str = Field(default='', max_length=160)
+    size: str = Field(default='', max_length=32)
+    interest: str = Field(default='other', max_length=32)
+    note: str = Field(default='', max_length=2000)
+
 class ExerciseItem(BaseModel):
     chapter: str = Field(min_length=1, max_length=64)
     exercise: str = Field(min_length=1, max_length=64)
@@ -330,6 +345,12 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
         CREATE INDEX IF NOT EXISTS exercise_progress_writes_user ON exercise_progress_writes(user_id, created);
         CREATE TABLE IF NOT EXISTS exercise_grade_calls(id TEXT PRIMARY KEY, visitor_hash TEXT NOT NULL, created INTEGER NOT NULL, outcome TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS exercise_grade_calls_visitor ON exercise_grade_calls(visitor_hash, created);
+        CREATE TABLE IF NOT EXISTS leads(id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL,
+          org TEXT NOT NULL DEFAULT '', size TEXT NOT NULL DEFAULT '', interest TEXT NOT NULL DEFAULT 'other',
+          note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'new',
+          visitor_hash TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL);
+        CREATE INDEX IF NOT EXISTS leads_created ON leads(created);
+        CREATE INDEX IF NOT EXISTS leads_visitor ON leads(visitor_hash, created);
         ''')
         # IF NOT EXISTS cannot widen an existing column, so the schema above is
         # only the shape a fresh database gets; deployed ones are rebuilt here.
@@ -496,6 +517,24 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
     for origin in os.getenv('ALLOWED_ORIGINS', '').split(','):
         origin = origin.strip().rstrip('/')
         if origin: allowed_origins.add(origin)
+
+    def public_base(request):
+        """The origin crawlers should be told about.
+
+        APP_BASE_URL is authoritative when it names a real host. When it is the
+        loopback default (the deployment never set it), using it verbatim made
+        robots.txt advertise `http://127.0.0.1:8899/sitemap.xml` -- useless to
+        every crawler and a dead giveaway that nobody checked. Fall back to the
+        forwarded host, then to the Host header, and only then to `base`.
+        """
+        if parsed.hostname not in ('127.0.0.1', 'localhost'):
+            return base
+        host = (request.headers.get('x-forwarded-host') or request.headers.get('host') or '').split(',')[0].strip()
+        if not host or host.startswith(('127.0.0.1', 'localhost')):
+            return base
+        proto = (request.headers.get('x-forwarded-proto') or request.url.scheme or 'http').split(',')[0].strip()
+        return f'{proto if proto in ("http", "https") else "http"}://{host}'
+
     accounts_dsn = os.getenv('DATABASE_URL', '').strip()
     accounts_store = AccountsStore(
         accounts_dsn,
@@ -749,8 +788,14 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
     @app.get('/api/session')
     def session(request: Request):
         request.session.setdefault('csrf',secrets.token_urlsafe(32))
+        # The panel asks once whether an opinion is available at all. Without
+        # this it can only discover the answer by calling /api/exercises/grade
+        # and swallowing the 503, which is exactly the silent failure the
+        # assessment report found.
+        grading_enabled=bool(os.getenv('EXERCISE_LLM_KEY') and os.getenv('EXERCISE_LLM_BASE_URL'))
         return {'user':public_user(user(request)), 'csrf':request.session['csrf'], 'loginEnabled':login_enabled,
-                'localLoginEnabled':local_login_enabled, 'oauthLoginEnabled':oidc_enabled}
+                'localLoginEnabled':local_login_enabled, 'oauthLoginEnabled':oidc_enabled,
+                'gradingEnabled':grading_enabled}
 
     @app.post('/api/analytics/view',status_code=204)
     def record_analytics_view(view: AnalyticsView, request: Request):
@@ -888,6 +933,35 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
             })
         return {'total':len(learners),'exerciseCount':len(exercise_ids),'learners':learners,
                 'generatedAt':datetime.now(analytics_timezone).isoformat(timespec='seconds')}
+
+    @app.get('/api/admin/leads')
+    def admin_leads(request: Request, limit: int = Query(100, ge=1, le=500), status: str = ''):
+        """Consultation enquiries, newest first. Admin only: the rows hold PII."""
+        require_admin(request)
+        query='SELECT * FROM leads'
+        params: list[Any]=[]
+        if status in ('new','contacted','closed'):
+            query+=' WHERE status=?'; params.append(status)
+        query+=' ORDER BY created DESC LIMIT ?'; params.append(limit)
+        with db() as conn:
+            rows=[dict(row) for row in conn.execute(query,params)]
+            counts={row['status']:row['total'] for row in
+                    conn.execute('SELECT status,count(*) total FROM leads GROUP BY status')}
+        for row in rows:
+            row.pop('visitor_hash',None)
+        return {'items':rows,'counts':counts,'total':sum(counts.values())}
+
+    @app.patch('/api/admin/leads/{lead_id}')
+    def update_lead(lead_id: str, request: Request, payload: dict[str, Any]):
+        require_admin(request)
+        status=str(payload.get('status',''))
+        if status not in ('new','contacted','closed'):
+            raise HTTPException(422,'状态无效')
+        with db() as conn:
+            row=conn.execute('SELECT id FROM leads WHERE id=?',(lead_id,)).fetchone()
+            if not row: raise HTTPException(404,'线索不存在')
+            conn.execute('UPDATE leads SET status=? WHERE id=?',(status,lead_id))
+        return {'ok':True}
 
     @app.get('/api/analytics/detailed')
     def analytics_detailed(request: Request, days: int = Query(7,ge=1,le=90), start: str = '', end: str = ''):
@@ -1098,6 +1172,47 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
             if not readonly_write_failure(error): raise
             return write_unavailable()
         return {'id':wid}
+
+    @app.post('/api/leads', status_code=201)
+    def create_lead(lead: LeadSubmission, request: Request):
+        """Public enquiry form. No session: /teams and /cases are read by guests.
+
+        Same-origin is enforced only when the browser sends an Origin header --
+        a cross-site form post always does, while a plain curl or a link checker
+        does not. Requiring it unconditionally would reject the very crawlers
+        that keep the page honest.
+        """
+        origin=(request.headers.get('origin') or '').strip()
+        if origin and not origin_allowed(request):
+            raise HTTPException(403,'请求来源无效')
+        email=lead.email.strip().lower()
+        if not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', email):
+            raise HTTPException(422,'邮箱格式看起来不对')
+        name=lead.name.strip()
+        if not name: raise HTTPException(422,'请填写称呼')
+        note=lead.note.strip()
+        now=int(time.time()); lid=secrets.token_hex(16)
+        material='lead:'+(request.client.host if request.client else 'unknown')
+        visitor_hash=hmac.new(session_secret.encode(),material.encode(),hashlib.sha256).hexdigest()
+        source=(request.headers.get('referer') or '')[:300]
+        try:
+            with db() as conn:
+                conn.execute('BEGIN IMMEDIATE')
+                recent=conn.execute('SELECT count(*) FROM leads WHERE visitor_hash=? AND created>?',
+                                    (visitor_hash,now-3600)).fetchone()[0]
+                # Five enquiries an hour from one address is already far beyond
+                # what a human sends; past that it is a script and the form is
+                # not the place to argue with it.
+                if recent>=5: raise HTTPException(429,'提交太频繁，请稍后再试')
+                conn.execute('''INSERT INTO leads(id,name,email,org,size,interest,note,source,status,visitor_hash,created)
+                                VALUES (?,?,?,?,?,?,?,?,'new',?,?)''',
+                             (lid,name,email,lead.org.strip()[:160],lead.size.strip()[:32],
+                              lead.interest.strip()[:32] or 'other',note,source,visitor_hash,now))
+        except sqlite3.OperationalError as error:
+            if not readonly_write_failure(error): raise
+            return write_unavailable()
+        LOGGER.info('Lead received: %s (%s)', lid, lead.interest)
+        return {'ok':True,'id':lid}
 
     @app.delete('/api/wishes/{wish_id}')
     def delete_wish(wish_id: str, request: Request):
@@ -1477,11 +1592,11 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
         # SVG with its own MIME type instead of a FastAPI JSON 404.
         return FileResponse(ROOT/'favicon.svg', media_type='image/svg+xml', headers={'Cache-Control':SHORT_CACHE})
     @app.get('/robots.txt')
-    def robots_txt():
-        body = f'User-agent: *\nAllow: /\nSitemap: {base}/sitemap.xml\n'
+    def robots_txt(request: Request):
+        body = f'User-agent: *\nAllow: /\nSitemap: {public_base(request)}/sitemap.xml\n'
         return PlainTextResponse(body, headers={'Cache-Control':SHORT_CACHE})
     @app.get('/sitemap.xml')
-    def sitemap_xml():
+    def sitemap_xml(request: Request):
         # The site is hash-routed, so there is exactly one crawlable URL. A
         # sitemap with invented chapter paths would be worse than one entry.
         last_modified = datetime.fromtimestamp(
@@ -1489,7 +1604,7 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
         body = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
-            f'<url><loc>{xml_escape(base + "/")}</loc>'
+            f'<url><loc>{xml_escape(public_base(request) + "/")}</loc>'
             f'<lastmod>{last_modified}</lastmod>'
             '<changefreq>weekly</changefreq><priority>1.0</priority></url>'
             '</urlset>\n'

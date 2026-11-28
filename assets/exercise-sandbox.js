@@ -7,10 +7,11 @@
    module before a single line of learner code executes, which on a slow
    connection takes far longer than any exercise is allowed to run. Folding that
    into the 15-second budget produced "运行超时（15秒），请检查是否有死循环" for a
-   learner whose code had not started yet. So the worker announces `loading` as
-   soon as it starts booting, and the execution clock starts from THAT message:
-   the download gets its own, much longer budget, and the timeout a learner sees
-   always describes their code.
+   learner whose code had not started yet. The worker therefore announces
+   `loading` when the download starts and `ready` only after Python is
+   initialised; the execution clock starts from `ready`. The download gets its
+   own, much longer budget, and the timeout a learner sees always describes
+   their code.
 
    Timers live here, not in the worker, because a worker being terminate()d
    cannot be relied on to run a pending timeout callback. */
@@ -116,14 +117,15 @@
         // Only one timer is ever armed, and which one depends on whether the
         // runtime has announced itself yet.
         let timer = null;
-        // The worker announces `loading` once per run. Recorded rather than
-        // assumed: a replayed `loading` carrying a valid nonce re-enters
-        // armRunTimeout(), which clears the running execution timer and starts
-        // a fresh 15-second budget. Learner code that reached postMessage can
-        // mint that replay, so without this a sandbox could keep resetting its
-        // own execution clock. The nonce is what makes the FIRST one
-        // trustworthy; this is what stops the second one.
+        // The worker announces `loading` once per run: the download is under
+        // way, but Python is not ready and the learner's clock must not start.
+        // `ready` is the only message that arms the execution timer. Both are
+        // one-shot: a replayed message carrying a valid nonce would otherwise
+        // restart a clock, and learner code that reached postMessage can mint
+        // that replay. The nonce is what makes the FIRST one trustworthy; this
+        // is what stops the second one.
         let loadingSeen = false;
+        let readySeen = false;
         const finish = value => {
           if (settled) return;
           settled = true;
@@ -157,12 +159,19 @@
           if (data.nonce !== nonce) return;
           if (data.type === 'loading') {
             // One transition per run. A second `loading` is either a replay or
-            // a worker bug, and honouring it would restart the execution clock.
+            // a worker bug, and honouring it would restart the download phase.
             if (loadingSeen) return;
             loadingSeen = true;
             if (onPhase) onPhase({ phase: 'loading' });
-            // The download is over the moment the worker can talk to us; from
-            // here on the learner's clock is what matters.
+            return;
+          }
+          if (data.type === 'ready') {
+            // Python is initialised; from here on the learner's clock is what
+            // matters. The load timer is deliberately left running until this
+            // point: it is the only thing that fires if `ready` never arrives.
+            if (readySeen) return;
+            readySeen = true;
+            if (onPhase) onPhase({ phase: 'running' });
             armRunTimeout();
             return;
           }

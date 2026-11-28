@@ -26,9 +26,26 @@ ALLOWED_ORIGINS=https://learn.alphalio.cn
 # 可选：开启 OAuth 登录
 OAUTH_CLIENT_ID=
 OAUTH_CLIENT_SECRET=
-# 可选：练习 AI 评分
+# 可选：开启练习 AI 点评（两者都设置才生效）
 EXERCISE_LLM_KEY=
+EXERCISE_LLM_BASE_URL=https://api.deepseek.com/v1
+EXERCISE_LLM_MODEL=deepseek-chat
 ```
+
+练习点评的 key 不要写进 `ecosystem.config.js`（该文件进仓库）。
+PM2 启动时会读取 `/data/ms-cookbook/.data/account-db.env`，把上面三项追加进去即可：
+
+```bash
+cat >> /data/ms-cookbook/.data/account-db.env <<'EOF'
+EXERCISE_LLM_KEY=sk-...
+EXERCISE_LLM_BASE_URL=https://api.deepseek.com/v1
+EXERCISE_LLM_MODEL=deepseek-chat
+EOF
+pm2 restart ms-cookbook --update-env
+```
+
+`/api/session` 的 `gradingEnabled` 会反映配置是否生效；未生效时反思题下方会显示
+「AI 点评尚未开放」，而不是静默无响应。
 
 注意：
 

@@ -28,7 +28,7 @@
 .community-dock button { background: var(--surface); }
 body[data-view=reader] .community-dock, body[data-view=community] .community-dock { display: none; }
 .community-dialog { border: 0; padding: 25px; background: var(--paper); color: var(--ink); width: min(440px, calc(100% - 28px)); max-height: 88dvh; border-radius: 20px; text-align: center; overflow: auto; }
-.community-dialog::backdrop { background: var(--heading); backdrop-filter: blur(5px); }
+.community-dialog::backdrop { background: rgba(23, 20, 18, .38); backdrop-filter: blur(5px); }
 .community-dialog .community-qr { margin: 20px auto; }
 .community-dialog p { line-height: 1.8; }
 @media(max-width:700px) {

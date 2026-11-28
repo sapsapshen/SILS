@@ -127,3 +127,18 @@ def test_secure_cookie_follows_the_https_base_url(tmp_path, monkeypatch):
     assert 'secure' in lowered
     assert 'httponly' in lowered
     assert 'samesite=lax' in lowered
+
+def test_robots_never_advertises_a_loopback_sitemap_behind_a_proxy(site):
+    # The live deployment left APP_BASE_URL at the loopback default, so
+    # robots.txt pointed every crawler at 127.0.0.1. The forwarded host has to
+    # win once the app is behind nginx.
+    response = client(site).get('/robots.txt', headers={
+        'x-forwarded-host': 'learn.example.org',
+        'x-forwarded-proto': 'https',
+    })
+    assert 'Sitemap: https://learn.example.org/sitemap.xml' in response.text
+
+
+def test_sitemap_uses_the_public_host_header_when_no_base_url_is_set(site):
+    response = client(site).get('/sitemap.xml', headers={'host': '120.53.222.178:8899'})
+    assert '<loc>http://120.53.222.178:8899/</loc>' in response.text

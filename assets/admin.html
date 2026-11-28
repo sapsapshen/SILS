@@ -7,7 +7,7 @@
   <meta name="robots" content="noindex,nofollow">
   <link rel="icon" href="/assets/brand/book-mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/i18n.css?v=fb1a351970a2">
-  <link rel="stylesheet" href="/assets/admin.css?v=1">
+  <link rel="stylesheet" href="/assets/admin.css?v=2">
   <title>学习管理后台｜超智学习空间</title>
 </head>
 <body>
@@ -25,6 +25,7 @@
         <article><span data-i18n="admin.statExercises">练习总数</span><strong id="adminExercises">—</strong></article>
         <article><span data-i18n="admin.statPassed">累计通过</span><strong id="adminPassed">—</strong></article>
         <article><span data-i18n="admin.statHighlights">划线总数</span><strong id="adminHighlights">—</strong></article>
+        <article><span data-i18n="admin.statLeads">咨询线索</span><strong id="adminLeads">—</strong></article>
       </section>
       <section class="admin-table-wrap">
         <table class="admin-table">
@@ -40,6 +41,26 @@
         </table>
         <p class="admin-empty" id="adminEmpty" hidden data-i18n="admin.empty">还没有注册用户。</p>
       </section>
+      <section class="admin-leads">
+        <h2 data-i18n="admin.leadsTitle">咨询线索</h2>
+        <p class="admin-intro" data-i18n="admin.leadsIntro">来自 /teams 与 /cases 的咨询，按提交时间倒序，仅管理员可见。</p>
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead><tr>
+              <th scope="col" data-i18n="admin.colReceived">提交时间</th>
+              <th scope="col" data-i18n="admin.colLeadName">称呼</th>
+              <th scope="col" data-i18n="admin.colLeadEmail">邮箱</th>
+              <th scope="col" data-i18n="admin.colOrg">机构</th>
+              <th scope="col" data-i18n="admin.colSize">规模</th>
+              <th scope="col" data-i18n="admin.colInterest">意向</th>
+              <th scope="col" data-i18n="admin.colNote">需求</th>
+              <th scope="col" data-i18n="admin.colLeadStatus">状态</th>
+            </tr></thead>
+            <tbody id="adminLeadsBody"></tbody>
+          </table>
+          <p class="admin-empty" id="adminLeadsEmpty" hidden data-i18n="admin.leadsEmpty">还没有收到咨询。</p>
+        </div>
+      </section>
     </main>
   </div>
   <script src="/assets/i18n.js?v=ba10533aab6f"></script>
@@ -47,6 +68,6 @@
   <script src="/assets/locale/en.js?v=c5f178583523"></script>
   <script src="/assets/locale/es.js?v=0d2776c2a952"></script>
   <script src="/assets/language-switcher.js?v=d4550b90d72b"></script>
-  <script src="/assets/admin-dashboard.js?v=1"></script>
+  <script src="/assets/admin-dashboard.js?v=2"></script>
 </body>
 </html>

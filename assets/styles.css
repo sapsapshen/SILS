@@ -452,3 +452,7 @@ a { color: inherit; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+/* A dead link used to land on the home page silently. The notice is part of the
+   fix: the reader has to know the address they followed no longer exists. */
+.route-notice { position: fixed; z-index: 95; left: 50%; bottom: 96px; transform: translateX(-50%); margin: 0; padding: 12px 20px; max-width: calc(100vw - 32px); border: 1px solid var(--border); border-radius: 12px; background: var(--paper); color: var(--ink); font-size: 14px; box-shadow: 0 4px 20px rgba(23, 20, 18, .12); }

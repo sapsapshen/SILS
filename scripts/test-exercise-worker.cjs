@@ -364,12 +364,18 @@ function createWorkerHost(override) {
       replies.length = 0;
       const nonce = request && request.nonce !== undefined ? request.nonce : 'test-nonce';
       await handler({ data: Object.assign({ type: 'run' }, request, { nonce }) });
-      assert.equal(replies.length, 2, 'the worker must post a loading notice and one result per run');
+      assert.ok(replies.length === 2 || replies.length === 3,
+        'the worker posts loading, then ready only when the runtime boots, then one result');
       assert.equal(replies[0].type, 'loading');
       assert.equal(replies[0].nonce, nonce);
-      assert.equal(replies[1].type, 'result');
-      assert.equal(replies[1].nonce, nonce, 'the result must echo the request nonce');
-      return replies[1];
+      const result = replies[replies.length - 1];
+      if (replies.length === 3) {
+        assert.equal(replies[1].type, 'ready', 'ready is what starts the execution clock');
+        assert.equal(replies[1].nonce, nonce);
+      }
+      assert.equal(result.type, 'result');
+      assert.equal(result.nonce, nonce, 'the result must echo the request nonce');
+      return result;
     },
   };
 }
@@ -777,8 +783,9 @@ const CASES = [
     const settled = sandbox.run({ code: 'while True:\n    pass\n', checks, timeoutMs: 20 });
     await settle();
     const { data, worker: posted } = box.take();
-    // The runtime is up: the worker said so, so the LEARNER's clock is running.
-    posted.emit('message', { data: { type: 'loading', nonce: data.nonce } });
+    // The runtime is up: the worker said `ready`, so the LEARNER's clock is
+    // running. `loading` alone means the download is still in progress.
+    posted.emit('message', { data: { type: 'ready', nonce: data.nonce } });
     const result = await settled;
     assert.equal(result.ok, false);
     assert.equal(result.reason, box.api.SandboxOutcome.TIMEOUT);
@@ -827,6 +834,8 @@ const CASES = [
     const { data, worker: posted } = box.take();
     await new Promise(resolve => setTimeout(resolve, 200));
     posted.emit('message', { data: { type: 'loading', nonce: data.nonce } });
+    // `loading` alone must not start the learner's clock; `ready` does.
+    posted.emit('message', { data: { type: 'ready', nonce: data.nonce } });
     await new Promise(resolve => setTimeout(resolve, 40));
     posted.emit('message', {
       data: { type: 'result', nonce: data.nonce, ok: true, stdout: 'done\n', outcomes: [], ms: 1 },

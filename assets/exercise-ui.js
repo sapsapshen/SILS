@@ -90,6 +90,9 @@
   const onPhase = event => {
     if (!activeStatus) return;
     if (event && event.phase === 'loading') activeStatus.textContent = t('exercise.loading');
+    // `running` is sent once Python is initialised; the execution clock starts
+    // here, so the "downloading" copy must not stay on screen through a run.
+    if (event && event.phase === 'running') activeStatus.textContent = t('exercise.running');
   };
 
   let panel = null;
@@ -168,9 +171,19 @@
       .finally(() => clearTimeout(timer));
   }
 
+  /* Set when the session says no model is configured, and when a call still
+     comes back 503/429. The panel uses it to say so once instead of looking
+     like the advice simply never existed. */
+  let gradingDisabled = false;
+  let gradingFailed = false;
+
   async function tryLlmGrade(exercise, code) {
     if (!exercise.llm_rubric || exercise.llm_rubric.enabled !== true) return null;
     if (!exercise.llm_rubric.criteria) return null;
+    // One probe per page view. `gradingEnabled === false` is an explicit "no
+    // model configured"; undefined means an older server, so try anyway.
+    const info = await readSession();
+    if (info && info.gradingEnabled === false) { gradingDisabled = true; return null; }
     try {
       const response = await fetchWithTimeout('/api/exercises/grade', {
         method: 'POST',
@@ -180,11 +193,11 @@
       }, LLM_TIMEOUT_MS);
       // 503 is the documented "LLM not configured / unavailable" answer and 429
       // is the rate limit. Both degrade to the deterministic score the reader
-      // already has; neither is worth an error message or a retry.
-      if (!response.ok) return null;
+      // already has; the panel says so rather than failing silently.
+      if (!response.ok) { gradingFailed = true; return null; }
       const data = await response.json();
       return typeof data.score === 'number' ? data : null;
-    } catch { return null; }
+    } catch { gradingFailed = true; return null; }
   }
 
   /* Whether `node` is still inside the panel this module owns. An answer that
@@ -211,14 +224,21 @@
      The opinion is ADVICE, never a verdict. It is not passed to
      Grader.grade(), it is not written to the store, and it cannot change the
      badge: a self-assessment is never a pass (rule 3) no matter what the model
-     says about the answer. Failure and timeout both degrade to no opinion at
-     all -- no error line, nothing to dismiss -- because the reader's own
-     self-assessment has already been recorded by the time this runs. */
+     says about the answer. When the model cannot answer, the panel says so in
+     one short line instead of leaving a blank space that looks like a bug. */
   async function consultLlmRubric(exercise, answer, host) {
     if (!exercise.llm_rubric || exercise.llm_rubric.enabled !== true) return;
     if (!exercise.llm_rubric.criteria) return;
     const llm = await tryLlmGrade(exercise, answer);
-    if (!llm || !llm.feedback) return;
+    if (!llm || !llm.feedback) {
+      // Say why there is no opinion. "Nothing appeared" is indistinguishable
+      // from a broken button, which is what the assessment report found.
+      if ((gradingDisabled || gradingFailed) && isAttached(host)) {
+        host.replaceChildren(el('p', t(gradingDisabled ? 'exercise.llmDisabled' : 'exercise.llmUnavailable'),
+          'exercise-llm-note'));
+      }
+      return;
+    }
     // The reader may have collapsed the card or moved to another chapter while
     // the call was in flight; writing into a detached node would be a leak, not
     // an update.
@@ -794,6 +814,11 @@ function buildChoiceExercise(exercise, host) {
     renderSolution(exercise, host);
 
     submit.addEventListener('click', () => {
+      // A previous failed attempt left a `.exercise-checks` list right after
+      // the status line. Answering correctly afterwards updated the text but
+      // kept the old ✗ row, so the panel said both "correct" and "wrong".
+      const stale = status.nextElementSibling;
+      if (stale && stale.classList.contains('exercise-checks')) stale.remove();
       const chosen = [...field.querySelectorAll('input')].filter(node => node.checked).map(node => node.value);
       const outcomes = choiceOutcomes(checks, chosen);
       const verdict = Grader.grade(exercise, { outcomes });

@@ -745,12 +745,15 @@ self.addEventListener('message', async event => {
   // postMessage cannot forge a passing result.
   const nonce = request.nonce || null;
   try {
-    // Started before the await so the main thread learns the download is under
-    // way. Without it the facade cannot tell a slow first run from an infinite
-    // loop, and charges the 13 MB to the learner's execution budget.
+    // `loading` only says the download has started. The execution clock must
+    // not start here: on a first run the 13 MB download and WASM compile
+    // happen between this message and `ready`, and charging that to the
+    // learner produced a "15 秒超时" for code that had not run yet.
     const ready = runtime ? Promise.resolve(runtime) : ensureRuntime();
     reply({ type: 'loading', nonce });
     const pyodide = await ready;
+    reply({ type: 'ready', nonce });
+    const execStarted = Date.now();
     const guard = ensureSealed(pyodide);
     // Re-arm before every run: learner code can strip sys.meta_path, and the
     // NEXT run has to still be sealed. `globals` is the private guard
@@ -782,7 +785,7 @@ self.addEventListener('message', async event => {
       return own || { ok: false, detail: ok ? 'not evaluated' : 'code did not run' };
     });
     reply({
-      type: 'result', nonce, ok, stdout, error, values, outcomes, ms: Date.now() - started,
+      type: 'result', nonce, ok, stdout, error, values, outcomes, ms: Date.now() - execStarted,
     });
   } catch (failure) {
     // Still one slot per check: the grader reads outcomes by index, so a short

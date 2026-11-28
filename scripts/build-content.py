@@ -34,6 +34,34 @@ def image_size(path):
         head = handle.read(30)
     if head.startswith(b'\x89PNG\r\n\x1a\n') and len(head) >= 24:
         return int.from_bytes(head[16:20], 'big'), int.from_bytes(head[20:24], 'big')
+    if head[:2] == b'\xff\xd8':
+        # JPEG keeps its dimensions in a start-of-frame segment, which is not
+        # within the first 30 bytes -- walk the marker chain. Photos in the
+        # imported chapters are .jpg, and a missing size means no CLS box.
+        with path.open('rb') as handle:
+            handle.seek(2)
+            while True:
+                byte = handle.read(1)
+                if not byte:
+                    return None
+                if byte != b'\xff':
+                    continue
+                marker = handle.read(1)
+                while marker == b'\xff':
+                    marker = handle.read(1)
+                if not marker:
+                    return None
+                if marker in (b'\xd8', b'\xd9') or marker[0] == 0x01:
+                    continue
+                length = int.from_bytes(handle.read(2), 'big')
+                if length < 2:
+                    return None
+                if 0xC0 <= marker[0] <= 0xC3:
+                    data = handle.read(5)
+                    if len(data) < 5:
+                        return None
+                    return int.from_bytes(data[3:5], 'big'), int.from_bytes(data[1:3], 'big')
+                handle.seek(length - 2, 1)
     if head[:4] == b'RIFF' and head[8:12] == b'WEBP':
         fourcc = head[12:16]
         if fourcc == b'VP8X' and len(head) >= 30:
@@ -240,12 +268,22 @@ def build(check=False):
         # The chapter's first image is the LCP element. Chrome's own guidance is
         # explicit: a lazy-loaded LCP image is discovered too late, which is the
         # 245ms load delay measured on the live site.
-        first_image = article.find('.//img')
+        # The upstream author line carries a 20px GitHub icon. It is an icon,
+        # not article art: counting it as the chapter's first image made the
+        # LCP hint land on the icon and left the real hero lazy.
+        article_images = [node for node in article.iter('img')
+                          if 'author-link-icon' not in (node.get('class') or '')]
+        first_image = article_images[0] if article_images else None
         if first_image is not None:
             first_image.attrib.pop('loading', None)
             first_image.set('fetchpriority', 'high')
         body = '\n'.join(dump(n) for n in article)
-        chapters.append({'id': f'chapter-{number}', 'number': number, 'title': entry['title'], 'sourceUrl': f'{REPO}/blob/main/content/chapters/chapter-{number:02d}.md', 'editUrl': f'{REPO}/edit/main/content/{entry["file"]}', 'minutes': max(1, round(len(re.sub(r'\s+', '', plain(article))) / 520)) if entry['status']=='ready' else 0, 'status': entry['status'], 'headings': headings, 'html': body, 'imageCount': len(list(article.iter('img'))), 'attachmentCount': sum(n.get('class') == 'attachment' for n in article.iter('a'))})
+        # The upstream book renumbered its chapters and added six more, so the
+        # local reading order no longer matches chapter-NN.md upstream. Using
+        # the local number here sent readers of ch.11-35 to the wrong article.
+        # `upstreamNumber` in the manifest is the single source of that mapping.
+        upstream = int(entry.get('upstreamNumber', number))
+        chapters.append({'id': f'chapter-{number}', 'number': number, 'title': entry['title'], 'sourceUrl': f'{REPO}/blob/main/content/chapters/chapter-{upstream:02d}.md', 'editUrl': f'{REPO}/edit/main/content/source-html/chapter-{upstream:02d}.html', 'minutes': max(1, round(len(re.sub(r'\s+', '', plain(article))) / 520)) if entry['status']=='ready' else 0, 'status': entry['status'], 'headings': headings, 'html': body, 'imageCount': len(article_images), 'attachmentCount': sum(n.get('class') == 'attachment' for n in article.iter('a'))})
     for chapter, entry in zip(chapters, manifest['chapters']):
         chapter['discussionId'] = entry.get('discussionId', chapter['id'])
     payload = {k: manifest[k] for k in ('title', 'sourceUpdated')}

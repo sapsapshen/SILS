@@ -14,13 +14,27 @@ def book_data():
 
 def test_chapter_payload_shape_unchanged():
     data = book_data()
-    assert data['chapterCount'] == 35
+    # 35 from the 2026-09-20 snapshot + 6 appended from upstream (36-41).
+    assert data['chapterCount'] == 41
     for chapter in data['chapters']:
         for key in ('id', 'number', 'title', 'sourceUrl', 'editUrl', 'minutes',
                     'status', 'headings', 'html', 'imageCount', 'attachmentCount',
                     'discussionId'):
             assert key in chapter, f'{chapter.get("id")} lost {key}'
         assert not chapter['html'].lower().count('<script')
+
+
+def test_upstream_links_follow_the_renumbered_source():
+    chapters = {chapter['number']: chapter for chapter in book_data()['chapters']}
+    # Upstream inserted two chapters before its 11 and four more later; local
+    # numbering is stable, so the link has to come from upstreamNumber.
+    assert chapters[11]['sourceUrl'].endswith('chapter-13.md')
+    assert chapters[20]['sourceUrl'].endswith('chapter-24.md')
+    assert chapters[32]['sourceUrl'].endswith('chapter-39.md')
+    assert chapters[33]['sourceUrl'].endswith('chapter-37.md')
+    assert chapters[35]['sourceUrl'].endswith('chapter-41.md')
+    assert chapters[36]['sourceUrl'].endswith('chapter-11.md')
+    assert chapters[36]['editUrl'].endswith('source-html/chapter-11.html')
 
 
 def test_i18n_editions_still_complete():

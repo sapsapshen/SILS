@@ -127,7 +127,9 @@ function createRealHost(override) {
       const result = replies.find(one => one.type === 'result');
       assert.ok(result, 'the worker must answer with a result');
       assert.equal(result.nonce, nonce, 'the worker must echo the nonce it was given');
-      return { result, notices: replies.filter(one => one.type === 'loading') };
+      // loading and ready are both phase messages; the facade needs both in order
+      // (loading starts the download UI, ready starts the learner's clock).
+      return { result, notices: replies.filter(one => one.type === 'loading' || one.type === 'ready') };
     },
   };
 }
@@ -680,13 +682,13 @@ caseOf('a forged postMessage is discarded while the run is still pending', async
     type: 'result', nonce: 'deadbeef', ok: true, stdout: 'forged',
     values: {}, outcomes: checks.map(() => ({ ok: true, detail: '' })),
   });
-  // ...and a replay of the worker's own `loading`, WITH the valid nonce. That is
+  // ...and a replay of the worker's own `ready`, WITH the valid nonce. That is
   // the one a real attacker can get, because the nonce rides the wire. If it
   // were honoured a second time it would clear the running execution timer and
   // restart the 15-second budget, so an infinite loop would never time out.
-  worker.forge({ type: 'loading', nonce });
+  worker.forge({ type: 'ready', nonce });
   assert.equal(settled, false,
-    'a forged result must not settle the run, and a replayed loading must not re-arm the clock');
+    'a forged result must not settle the run, and a replayed ready must not re-arm the clock');
 
   // Now let the genuine reply through and take the real verdict.
   release();
@@ -699,7 +701,7 @@ caseOf('a forged postMessage is discarded while the run is still pending', async
   assert.equal(result.stdout, 'real run\n', 'and the forged stdout must not have been believed either');
 });
 
-caseOf('a replayed loading cannot reset the execution clock', async host => {
+caseOf('a replayed ready cannot reset the execution clock', async host => {
   const box = createFacade(host);
   // A short execution budget, and the genuine reply held forever, so the run
   // can only end one way: the execution timeout firing.
@@ -717,18 +719,21 @@ caseOf('a replayed loading cannot reset the execution clock', async host => {
   });
   const nonce = worker.sent.nonce;
 
-  // The real worker's own `loading`, replayed over and over, each carrying the
+  // The real worker's own `ready`, replayed over and over, each carrying the
   // valid nonce. The nonce rides the wire, so this is exactly what an attacker
-  // who can reach postMessage is able to send.
+  // who can reach postMessage is able to send. The genuine reply is still
+  // gated, so the FIRST `ready` here is what starts the learner's clock --
+  // which is the precondition for the replay to be dangerous at all.
   //
   // Replayed for much LONGER than the budget on purpose. Honouring a second
-  // `loading` clears the running execution timer and starts a fresh one, so a
+  // `ready` clears the running execution timer and starts a fresh one, so a
   // facade that accepts the replay simply cannot time out until the attacker
   // stops: the deadline keeps moving to "now + budget". This case stops
   // replaying after a fixed window and then asserts the run died on schedule.
+  worker.forge({ type: 'ready', nonce });
   const replayUntil = started + BUDGET * 4;
   while (Date.now() < replayUntil && !settled) {
-    worker.forge({ type: 'loading', nonce });
+    worker.forge({ type: 'ready', nonce });
     await new Promise(resolve => setTimeout(resolve, 20));
   }
 
@@ -738,7 +743,7 @@ caseOf('a replayed loading cannot reset the execution clock', async host => {
   assert.equal(result.reason, 'timeout',
     `the run must still time out, got reason=${result.reason} elapsed=${elapsed}ms`);
   assert.ok(elapsed < BUDGET * 2,
-    `replayed loading messages must not restart the execution clock: ${elapsed}ms elapsed on a ${BUDGET}ms budget`);
+    `replayed ready messages must not restart the execution clock: ${elapsed}ms elapsed on a ${BUDGET}ms budget`);
 });
 
 caseOf('a real run passes every check kind on the real runtime', async host => {
