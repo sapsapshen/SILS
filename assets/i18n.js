@@ -95,8 +95,8 @@
      reader never needs. They are injected on demand, so `set` has to wait for
      them: notifying first would paint half-translated chrome over Chinese prose. */
   const extraPaths = {
-    en: ['assets/locale/en.js?v=c62e534a5579', 'assets/content-i18n/en.js?v=9d024de73b77'],
-    es: ['assets/locale/es.js?v=afea83f1127d', 'assets/content-i18n/es.js?v=21054230de22']
+    en: ['assets/locale/en.js?v=0357c156ae6c', 'assets/content-i18n/en.js?v=9d024de73b77'],
+    es: ['assets/locale/es.js?v=59af9e7cd189', 'assets/content-i18n/es.js?v=21054230de22']
   };
   async function load(code) {
     const next = normalize(code);

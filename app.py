@@ -1112,6 +1112,16 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
         if not oidc_enabled: raise HTTPException(503,'登录尚未配置')
         return await oauth.modelscope.authorize_redirect(request, base+'/auth/callback')
 
+    @app.get('/auth/register')
+    async def register_page(request: Request, return_to: str = '#home'):
+        # The sign-up form has always lived at the bottom of login.html; the
+        # URL /auth/register was simply never routed, so the report's check
+        # (and every outside link) saw a 404.
+        target=safe_return_to(return_to)
+        request.session['return_to']=target
+        if user(request): return RedirectResponse(return_to_url(target),status_code=303)
+        return FileResponse(ROOT/'login.html',headers={'Cache-Control':'no-store'})
+
     @app.get('/auth/oauth/login')
     async def oauth_login(request: Request, return_to: str = '#home'):
         if not oidc_enabled: raise HTTPException(503,'登录尚未配置')
@@ -1573,6 +1583,57 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
             if not readonly_write_failure(error): raise
             return write_unavailable()
         return {'saved':saved,'skipped':skipped}
+
+    class AskPayload(BaseModel):
+        question: str
+        chapter: str = ''
+        language: str = 'zh'
+
+    ask_limiter = LoginLimiter(limit=30, window=3600)
+
+    @app.post('/api/ask')
+    def ask_book(payload: AskPayload, request: Request):
+        """Answer a question using the current chapter as the only source.
+
+        A general chatbot over a book invents citations; constraining it to the
+        chapter the reader is on keeps the answer checkable. If the chapter does
+        not contain the answer, the prompt requires saying so.
+        """
+        require_same_origin(request)
+        address=request.client.host if request.client else 'unknown'
+        if ask_limiter.blocked('ip:'+address):
+            raise HTTPException(429,'提问太频繁，请稍后再试')
+        question=payload.question.strip()[:1200]
+        if len(question)<3:
+            raise HTTPException(422,'问题太短')
+        key=os.getenv('EXERCISE_LLM_KEY'); base=os.getenv('EXERCISE_LLM_BASE_URL')
+        if not key or not base:
+            raise HTTPException(503,'AI 问答未启用')
+        chapter_id=payload.chapter.strip()
+        context=''
+        if re.fullmatch(r'chapter-\d{1,2}', chapter_id):
+            md=ROOT/'content'/'chapters'/f"{chapter_id}.md"
+            if md.exists():
+                context=md.read_text(encoding='utf-8')[:9000]
+        language={'en':'English','es':'Español'}.get(payload.language[:2],'简体中文')
+        system=(f'你是《超智学习空间》的助教。只根据下面的章节原文回答，不要补充原文没有的事实。'
+                f'原文没有答案时，直接说“这一章没有讲”，并建议读者看哪一章。'
+                f'回答控制在 250 字以内，用{language}回答。\n\n章节原文：\n{context or "（无）"}')
+        try:
+            ask_limiter.fail('ip:'+address)
+            response=httpx.post(base.rstrip('/')+'/chat/completions',
+                headers={'Authorization':f'Bearer {key}'},
+                json={'model':os.getenv('EXERCISE_LLM_MODEL','gpt-4o-mini'),'temperature':0.2,
+                      'messages':[{'role':'system','content':system},{'role':'user','content':question}]},
+                timeout=30)
+            if response.status_code//100!=2: raise RuntimeError(f'LLM {response.status_code}')
+            answer=response.json()['choices'][0]['message']['content'].strip()
+        except HTTPException:
+            raise
+        except Exception:
+            LOGGER.exception('Ask endpoint failed')
+            raise HTTPException(502,'AI 暂时不可用')
+        return {'answer':answer[:4000],'chapter':chapter_id}
 
     @app.post('/api/exercises/grade')
     def grade_exercise(payload: ExerciseGrade, request: Request):

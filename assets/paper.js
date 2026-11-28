@@ -50,7 +50,7 @@
   }
   let paths = {};
   const PATH_ART = {beginner:'seedling', model:'mountain', application:'cubes', aigc:'palette'};
-  const PATH_CHAPTERS = {beginner:[1,5,7], model:[12,13,15], application:[19,27,28], aigc:[21,22,23,25]};
+  const PATH_CHAPTERS = {beginner:[1,5,7,8,10,36], model:[12,13,15,29,31], application:[19,27,28,36,37,41], aigc:[21,22,23,24,25,40]};
   function refreshPaths() {
     const build = key => ({
       key,
