@@ -124,16 +124,17 @@ for(const [,attrs] of indexHtml.matchAll(/<script\b([^>]*)>/g)){
 }
 const scriptOrder=[...eager,...deferred];
 /* Two load-order contracts nothing else pins, added with the edit that made
-   them matter. Exactly three scripts may block the parser -- the default
-   dictionary, its prose and the book data, whose absence paints an empty page
-   -- and they are named individually so a fourth eager tag cannot join them by
-   accident. Every other script defers, and asset-loader.js goes first: every
-   lazy bundle in the site is injected through it. */
+   them matter. Only the dictionary and its prose may block the parser now:
+   every consumer of BOOK_DATA (paper.js and the modules it injects) already
+   defers, so content.js can defer too and stop blocking first paint. It still
+   has to be the FIRST deferred script, and asset-loader.js still goes before
+   every lazy bundle. */
 assert(!indexHtml.includes('class="chapter-art"'),
   'reading.css hides .chapter-art; do not download 01-reading-v2.png from the shell');
-assert.deepEqual(eager,['i18n.js','locale/zh.js','content.js'],
-  'exactly assets/i18n.js, assets/locale/zh.js and assets/content.js may block the parser');
-assert.equal(deferred[0],'asset-loader.js','asset-loader.js must be the first deferred script');
+assert.deepEqual(eager,['i18n.js','locale/zh.js'],
+  'only assets/i18n.js and assets/locale/zh.js may block the parser');
+assert.equal(deferred[0],'content.js','content.js must be the first deferred script so BOOK_DATA exists before its readers');
+assert.equal(deferred[1],'asset-loader.js','asset-loader.js must precede every lazy bundle');
 const EXERCISE_MODULES=['exercises.js','exercise-grader.js','exercise-store.js','exercise-sandbox.js','exercise-map.js','exercise-ui.js'];
 for(const module of EXERCISE_MODULES){
   assert(!scriptOrder.includes(module),`index.html must not load ${module} eagerly`);
