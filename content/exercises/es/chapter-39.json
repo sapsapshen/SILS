@@ -1,0 +1,87 @@
+[
+  {
+    "id": "ch39-ex01",
+    "chapter": "chapter-39",
+    "type": "code",
+    "difficulty": 3,
+    "minutes": 15,
+    "objective": "Convertir puntuaciones en opciones y probabilidades",
+    "prompt": "El flujo de decisión de este capítulo es «puntuaciones de letras candidatas → probabilidades softmax → tomar el máximo → asignar de vuelta a la opción». Implementa dos funciones:\n\n`letter_probabilities(scores)`: `scores` es un diccionario `{letra: puntuación}`, devuelve `{letra: probabilidad}`, donde la suma de las probabilidades es 1; si el diccionario está vacío lanza `ValueError`.\n\n`choose_option(scores)`: devuelve `(la letra con mayor probabilidad, la probabilidad de esa letra)`; si las puntuaciones empatan, devuelve la de orden alfabético menor, garantizando un resultado estable; si el diccionario está vacío lanza `ValueError`.",
+    "starter": "import math\n\n\ndef letter_probabilities(scores):\n    # 返回 {字母: 概率}\n    return {}\n\n\ndef choose_option(scores):\n    # 返回 (字母, 概率)\n    return ('', 0.0)\n\nprint(choose_option({'A': 1.0, 'B': 2.0}))\n",
+    "checks": [
+      {
+        "kind": "assert_python",
+        "code": "p = letter_probabilities({'A': 0.0, 'B': 0.0})\nassert abs(sum(p.values()) - 1.0) < 1e-12, p\nassert abs(p['A'] - 0.5) < 1e-12 and abs(p['B'] - 0.5) < 1e-12, p",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "p = letter_probabilities({'A': 1.0, 'B': 2.0, 'C': 3.0})\nassert abs(sum(p.values()) - 1.0) < 1e-12, p\nassert p['C'] > p['B'] > p['A'], p",
+        "weight": 12
+      },
+      {
+        "kind": "assert_python",
+        "code": "p = letter_probabilities({'A': 1000.0, 'B': 0.0})\nassert abs(p['A'] - 1.0) < 1e-9, '大分数不能溢出: %r' % (p,)",
+        "weight": 14
+      },
+      {
+        "kind": "assert_python",
+        "code": "p = letter_probabilities({'A': -1000.0, 'B': 0.0})\nassert p['B'] > 0.999, p",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "letter, prob = choose_option({'A': 0.2, 'B': 0.9, 'C': 0.4})\nassert letter == 'B', letter\nassert abs(prob - letter_probabilities({'A': 0.2, 'B': 0.9, 'C': 0.4})['B']) < 1e-12, prob",
+        "weight": 12
+      },
+      {
+        "kind": "assert_python",
+        "code": "for _scores in ({'A': 1.0, 'B': 1.0}, {'B': 2.0, 'A': 2.0}, {'C': 1.0, 'A': 1.0, 'B': 1.0}):\n    assert choose_option(_scores)[0] == min(_scores), (_scores, choose_option(_scores))",
+        "weight": 14
+      },
+      {
+        "kind": "assert_python",
+        "code": "for _bad in ({}, []):\n    try:\n        letter_probabilities(_bad)\n        assert False, '空输入必须报错'\n    except (ValueError, TypeError):\n        pass\n    try:\n        choose_option(_bad)\n        assert False, '空输入必须报错'\n    except (ValueError, TypeError):\n        pass",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "import math\nfor _scores in ({'A': 0.5}, {'A': 2.0, 'B': -1.0}, {'A': 0.0, 'B': 0.0, 'C': 0.0, 'D': 0.0}):\n    _p = letter_probabilities(_scores)\n    _want = {k: math.exp(v - max(_scores.values())) for k, v in _scores.items()}\n    _total = sum(_want.values())\n    _want = {k: v / _total for k, v in _want.items()}\n    for k in _scores:\n        assert abs(_p[k] - _want[k]) < 1e-12, (_scores, k, _p[k], _want[k])",
+        "weight": 18
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "import math\n\n\ndef letter_probabilities(scores):\n    if not scores:\n        raise ValueError('scores must not be empty')\n    top = max(scores.values())\n    weights = {letter: math.exp(value - top) for letter, value in scores.items()}\n    total = sum(weights.values())\n    return {letter: weight / total for letter, weight in weights.items()}\n\n\ndef choose_option(scores):\n    probabilities = letter_probabilities(scores)\n    best = min(probabilities, key=lambda letter: (-probabilities[letter], letter))\n    return best, probabilities[best]\n",
+    "explanation": "Este ejercicio corresponde al fragmento de código más central de este capítulo: el modelo solo proporciona las puntuaciones de las letras candidatas, y el programa debe convertir las puntuaciones en probabilidades y luego tomar el máximo.\n\nLa clave de `letter_probabilities` es la **estabilidad numérica**. Calcular directamente `math.exp(1000)` provoca desbordamiento; restar primero el máximo y luego aplicar la exponencial deja las probabilidades completamente iguales, pero evita el desbordamiento. En las pruebas se usan puntuaciones de ±1000 precisamente para atacar este punto.\n\nLa normalización también se pasa por alto con facilidad: los números tras aplicar exp no son probabilidades, hay que dividirlos entre la suma total. Si solo se devuelve el resultado de exp, la suma de las probabilidades no es 1, y si las etapas posteriores lo usan para juicios de umbral, todo saldrá mal.\n\nLa clave de `choose_option` es la **determinación**. Si cuando las puntuaciones empatan se depende del orden del diccionario o de resultados accidentales de la comparación de flotantes, la misma entrada podría dar respuestas distintas, y depurarlo resulta muy doloroso. El enunciado exige el orden alfabético menor, que es una convención comprobable.\n\nUna entrada vacía debe dar error en lugar de devolver un resultado vacío: que una tarea de decisión no tenga candidatos es un problema de quien llama, y devolver silenciosamente un resultado haría que el error se propagara más lejos.\n\nCriterio de evaluación: los puntos de comprobación se basan en aserciones de comportamiento, no se compara la forma de implementación; se permite usar numpy, pero la solución de referencia solo usa la biblioteca estándar."
+  },
+  {
+    "id": "ch39-ex02",
+    "chapter": "chapter-39",
+    "type": "predict",
+    "difficulty": 1,
+    "minutes": 4,
+    "objective": "Que puede y que no puede garantizar el modelo",
+    "prompt": "Este capítulo describe el modelo de decisión como «recibe el contexto de entrada, la pregunta y las opciones candidatas, y devuelve el resultado y la probabilidad». ¿Cuáles de las siguientes afirmaciones son correctas? (opción múltiple)\n\nA. Devolver probabilidades permite al programa hacer juicios de umbral, pero una probabilidad alta no significa que la conclusión sea necesariamente correcta\nB. Las opciones candidatas deben ser mutuamente excluyentes y cubrir todas las posibilidades; de lo contrario, el modelo solo puede elegir una entre opciones incompletas\nC. La asignación entre letras y opciones debe coincidir con la del prompt; de lo contrario, la respuesta que recupere el programa quedará mal atribuida\nD. La llamada «cero alucinación» significa que este tipo de modelos no puede equivocarse al elegir\nE. Tras convertir las puntuaciones en probabilidades, se puede usar la diferencia entre la probabilidad máxima y la segunda más alta para decidir si se requiere revisión humana",
+    "checks": [
+      {
+        "kind": "output_choice",
+        "correct": [
+          "A",
+          "B",
+          "C",
+          "E"
+        ],
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "D contradice lo que dice este capítulo: cero alucinación describe que la salida está restringida a las opciones candidatas dadas, no significa que el juicio en sí no pueda ser erróneo. El modelo todavía puede elegir mal; la probabilidad solo permite al programa saber cuán seguro está.",
+    "explanation": "Este capítulo convierte la decisión en una interfaz separada; su valor radica en que «la salida puede ser usada directamente por el programa», no en que «la salida sea necesariamente correcta».\n\nA: La probabilidad es confianza, no corrección. Una probabilidad de 0.99 también puede ser una elección errónea, solo que el modelo está muy seguro. El programa puede usar umbrales para decidir si derivar a revisión humana.\n\nB: Las opciones candidatas son el espacio de elección del modelo. Si las opciones no son mutuamente excluyentes (por ejemplo, tener a la vez «reembolso» y «devolución con reembolso»), el modelo solo puede elegir entre opciones solapadas y el resultado no es explicable; si las opciones omiten la situación real, el modelo también tendrá que elegir una a duras penas.\n\nC: Si el prompt dice que A es «consultar pedido» y B es «cambiar dirección», y en el código la asignación está invertida, aunque el modelo responda bien el programa lo interpretará mal. Este es el error más común en ingeniería y también el más fácil de detectar con pruebas.\n\nD: Cero alucinación se refiere a no dar al modelo espacio para generar libremente: solo puede elegir entre las opciones candidatas, no puede inventar una quinta opción. Pero «elegir mal una opción dada» todavía puede ocurrir; estas dos cosas no deben confundirse.\n\nE: La diferencia entre la probabilidad máxima y la segunda más alta (margin) es una señal de incertidumbre de uso común. Una diferencia pequeña indica que el modelo está dudando; en ese caso, derivar a revisión humana es más seguro que ejecutar directamente.\n\nCriterio de evaluación: las letras seleccionadas deben coincidir exactamente con la respuesta de referencia."
+  }
+]

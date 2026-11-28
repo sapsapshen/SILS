@@ -1,0 +1,49 @@
+[
+  {
+    "id": "ch37-ex01",
+    "chapter": "chapter-37",
+    "type": "predict",
+    "difficulty": 1,
+    "minutes": 4,
+    "objective": "Check the to-do extraction task constraints",
+    "prompt": "This chapter defines \"extracting to-dos from quick notes\" as a structured task. Which of the following outputs conform to the conventions given in this chapter? (Multiple choice)\n\nA. task uses the action phrase from the original text, not rewritten into your own summary\nB. When the original text does not specify a time, due_text returns null rather than making up a time\nC. When the original text does not explicitly state a category, you may fill in \"life\" based on common sense\nD. Items that are already completed or canceled are not included as to-dos\nE. Multiple items are sorted by expected completion time from earliest to latest",
+    "checks": [
+      {
+        "kind": "output_choice",
+        "correct": [
+          "A",
+          "B",
+          "D"
+        ],
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "C is the opposite of this chapter's convention: category is filled in only when the original text explicitly states \"work, life, study, other\"; otherwise it is null. E is also wrong: multiple items are ordered by the order in which they appear in the original text, not sorted by time.",
+    "explanation": "This chapter first narrows the task, then discusses training. The input is a piece of quick notes, and the output is a fixed structure:\n\n{\"tasks\": [{\"task\": \"\\u63d0\\u4ea4\\u9879\\u76ee\\u62a5\\u544a\", \"due_text\": \"\\u5468\\u4e9418\\u70b9\", \"category\": \"\\u5de5\\u4f5c\"}, {\"task\": \"\\u6d47\\u82b1\", \"due_text\": null, \"category\": null}]}\n\nA corresponds to \"task uses the action phrase from the original text\": replacing it with your own summary loses information from the original text and also makes it hard for downstream programs to cross-check.\n\nB corresponds to \"due_text preserves the time description from the original text\": if none is written, leave it empty. Making up a time looks more complete but actually creates erroneous data.\n\nD corresponds to \"items that are already completed or canceled are not included as to-dos\": the boundary of this task is \"explicit and not yet completed.\"\n\nC is wrong because it treats common-sense completion as a model capability. This chapter requires that category be filled in only when explicitly stated in the original text, otherwise null—filling in \"life\" would cause downstream systems to treat the model's guess as user fact.\n\nE is wrong about ordering: this chapter requires ordering by order of appearance, because the original order itself is a clue to the user's narration; reordering by time would change verifiability.\n\nGrading boundary: the selected letters must exactly match the reference answer."
+  },
+  {
+    "id": "ch37-ex02",
+    "chapter": "chapter-37",
+    "type": "reflect",
+    "difficulty": 2,
+    "minutes": 10,
+    "objective": "Turn a mobile idea into a trainable task",
+    "prompt": "Choose a small task you want to complete offline on a phone (for example, extracting appointments from chat records, or extracting amounts from shopping receipts), and write out, following this chapter's method: the exact structure of input and output, how to handle boundary cases, where the training data comes from, why to use LoRA instead of full fine-tuning, and how you plan to verify after quantization that it has not degraded noticeably.",
+    "checks": [
+      {
+        "kind": "self_assessed",
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": true,
+      "criteria": "Whether the task is narrowed to a single, decidable output structure; whether boundaries such as null values/multiple items/colloquial times are defined; whether the data source and annotation standard are explained; whether the trade-offs of LoRA and quantization are explained; whether device-side verification methods and an acceptable degradation range are given"
+    },
+    "reference": "Task: do only one thing, with a fixed output structure. For example, \"extract the time and matter agreed upon by both parties from chat records,\" output {\"items\":[{\"what\":...,\"when\":...,\"who\":...}]}, with null for missing fields.\n\nBoundaries: return an empty array when there is no agreement; colloquial times (\"next Wednesday afternoon\") keep the original text rather than being converted to absolute dates; an item mentioned multiple times is kept only once; canceled agreements are not included.\n\nData: sample from your own chat records after de-identification, and annotate according to the same standard; separate training/validation/test, and the test set must not come from overlapping fragments of the same conversation as the training set.\n\nWhy LoRA: the data volume in mobile scenarios is small (hundreds to thousands of entries), and full fine-tuning easily overfits and is costly; LoRA trains only low-rank adapters, so memory and time are controllable, and rollback is easy.\n\nVerification after quantization: compare the base model, LoRA, and quantized versions on the same test set; look at field-level accuracy (what/when/who computed separately) rather than exact whole-string matching; then test on a real device the first-token latency, peak memory, and stability over 10 minutes of continuous operation. Acceptable degradation must be written down in advance, for example field accuracy dropping by no more than 2 percentage points.\n\nFinally: record both \"model output\" and \"human edits\" as data for the next round.",
+    "explanation": "This question tests translating \"I want my phone to help me organize things\" into an engineering task.\n\nThe first layer is narrowing. The broader the task, the harder it is to judge right from wrong; this chapter does only \"explicit and not yet completed to-dos\" for this reason. Only with a fixed output structure can accuracy be computed field by field.\n\nThe second layer is boundaries. Colloquial times, repeated mentions, completed/canceled, and no to-dos at all—if these cases are not written clearly, the model can only guess, and the guessed results cannot be accepted. This chapter uses null to mean \"the original text did not say,\" which is a very important design: a null value is a verifiable fact; fabrication is not.\n\nThe third layer is data. Data in mobile scenarios usually comes from personal records; de-identification, stratification, and non-overlap between training and test affect results more than model choice.\n\nThe fourth layer is trade-offs. LoRA is not \"more advanced\"; it is a reasonable choice when data is scarce and cost-sensitive. Quantization is not free either; device-side metrics and field-level accuracy must be used to prove that degradation is acceptable.\n\nThis question has no standard answer; grading looks at whether it covers the five things: task structure, boundaries, data, method, and verification."
+  }
+]

@@ -1,0 +1,87 @@
+[
+  {
+    "id": "ch41-ex01",
+    "chapter": "chapter-41",
+    "type": "code",
+    "difficulty": 3,
+    "minutes": 16,
+    "objective": "从 Agent 输出里提取并校验最终规则",
+    "prompt": "Mini AI Scientist 的最后一步是「提交规则」。模型会在长文本里给出一个 JSON 代码块，形如：\n\n```json\n{\"rule\": \"a 为偶数时输出 a+b，否则输出 a*b\"}\n```\n\n请实现 `extract_rule(text)`：从文本中找出**最后一个**合法的 JSON 代码块，返回其中的 `rule` 字符串；如果没有任何代码块、JSON 解析失败、或缺少非空的 `rule` 字段，抛 `ValueError`。\n\n再实现 `rule_is_complete(rule)`：当规则文本同时提到输入 a、输入 b 和至少一个条件（偶数/奇数/大于/小于/等于等）时返回 True，否则 False。它只是提交前的粗筛，不判断规则对错。",
+    "starter": "import json\nimport re\n\n\ndef extract_rule(text):\n    # 返回最后一个合法代码块里的 rule\n    return ''\n\n\ndef rule_is_complete(rule):\n    # 粗筛：是否同时提到 a、b 和条件\n    return False\n\nprint(extract_rule('```json\\n{\"rule\": \"a+b\"}\\n```'))\n",
+    "checks": [
+      {
+        "kind": "assert_python",
+        "code": "assert extract_rule('```json\\n{\"rule\": \"a+b\"}\\n```') == 'a+b'",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "text = 'first\\n```json\\n{\"rule\": \"a*b\"}\\n```\\nmiddle\\n```json\\n{\"rule\": \"a+b\"}\\n```\\nend'\nassert extract_rule(text) == 'a+b', extract_rule(text)",
+        "weight": 14
+      },
+      {
+        "kind": "assert_python",
+        "code": "for _bad in ('no block here', '```json\\n{not json}\\n```', '```json\\n{\"other\": 1}\\n```', '```json\\n{\"rule\": \"   \"}\\n```'):\n    try:\n        extract_rule(_bad)\n        assert False, '应当报错: %r' % (_bad,)\n    except ValueError:\n        pass",
+        "weight": 16
+      },
+      {
+        "kind": "assert_python",
+        "code": "text = '```json\\n{\"rule\": \"a+b\"}\\n```\\n```python\\nprint(1)\\n```'\nassert extract_rule(text) == 'a+b', '非 json 代码块应被跳过'",
+        "weight": 12
+      },
+      {
+        "kind": "assert_python",
+        "code": "assert rule_is_complete('当 a 为偶数时输出 a+b，否则输出 a*b') is True\nassert rule_is_complete('a 和 b 相加') is False, '缺少条件'\nassert rule_is_complete('偶数时加一') is False, '缺少 b'",
+        "weight": 16
+      },
+      {
+        "kind": "assert_python",
+        "code": "for _rule in ('如果 a 大于 b 就输出 a，否则输出 b', 'a 等于 b 时输出 0，否则输出 a*b'):\n    assert rule_is_complete(_rule) is True, _rule\nfor _rule in ('', '输出 a+b', '当条件满足时输出结果'):\n    assert rule_is_complete(_rule) is False, _rule",
+        "weight": 16
+      },
+      {
+        "kind": "assert_python",
+        "code": "text = '说明\\n```JSON\\n{\"rule\": \"a-b\"}\\n```\\n'\nassert extract_rule(text) == 'a-b', '代码块标记大小写不敏感'",
+        "weight": 8
+      },
+      {
+        "kind": "assert_python",
+        "code": "text = '```json\\n{\"rule\": \"a+b\", \"note\": \"x\"}\\n```'\nassert extract_rule(text) == 'a+b'",
+        "weight": 8
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "import json\nimport re\n\n\ndef extract_rule(text):\n    blocks = re.findall(r'```(?:json)?\\s*(\\{.*?\\})\\s*```', text, re.S | re.I)\n    for block in reversed(blocks):\n        try:\n            payload = json.loads(block)\n        except json.JSONDecodeError:\n            continue\n        rule = payload.get('rule') if isinstance(payload, dict) else None\n        if isinstance(rule, str) and rule.strip():\n            return rule.strip()\n    raise ValueError('no usable rule block')\n\n\ndef rule_is_complete(rule):\n    if not isinstance(rule, str):\n        return False\n    text = rule.lower()\n    has_a = 'a' in text\n    has_b = 'b' in text\n    has_condition = any(word in text for word in ('偶数', '奇数', '大于', '小于', '等于', 'even', 'odd', 'greater', 'less', 'equal'))\n    return has_a and has_b and has_condition\n",
+    "explanation": "本章的 Agent 循环里，模型输出是自然语言夹着代码块，程序不能直接把整段文本当成规则。\n\n`extract_rule` 考三件事：\n\n1. **取最后一个**。模型可能先写一版草稿、再修正，最后一版才是它想提交的。取第一个会把中间产物当成结论。\n2. **只认合法 JSON**。解析失败要跳过，继续往前找，而不是直接报错——前面可能有半截被截断的块。\n3. **字段校验**。`rule` 必须是非空字符串；缺字段、空字符串、类型不对，都算没有可用提交。\n\n`rule_is_complete` 是一个**粗筛**，不是判分器。本章真正的验收是把规则放到 441 种输入上逐一核对，但那个成本高；提交前先用低成本规则挡掉明显不完整的输出（只说「输出结果」、只提到一个变量），能减少无效评测。\n\n注意它的边界：返回 True 不代表规则对，只代表「值得送进沙箱跑一遍」。这也是本题不检查规则正确性的原因。\n\n判分边界：按行为断言，不比对实现写法；代码块语言标记大小写、多余字段都覆盖到了。"
+  },
+  {
+    "id": "ch41-ex02",
+    "chapter": "chapter-41",
+    "type": "predict",
+    "difficulty": 1,
+    "minutes": 4,
+    "objective": "判断小模型做科研闭环的关键变量",
+    "prompt": "本章用 4B 级开源模型完成「隐藏规则发现」的闭环。下面哪些结论与本章一致？（多选）\n\nA. 把任务压缩成输入有限、可自动核对的形式，比让模型做开放式科研更可行\nB. 参数量是唯一决定因素，4B 模型不可能完成这类任务\nC. 思考模式可能比参数量更影响结果\nD. 提交关卡能拦住与实验数据矛盾的结论，但不能保证模型一定改对\nE. 工具的设计要匹配模型能力，工具太复杂反而会拖垮小模型",
+    "checks": [
+      {
+        "kind": "output_choice",
+        "correct": [
+          "A",
+          "C",
+          "D",
+          "E"
+        ],
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "B 与本章实测相反：4B 级模型在压缩后的闭环里可以完成任务，本章还专门比较了思考模式与参数量的影响。",
+    "explanation": "本章的核心不是「让模型做科研」，而是「把科研压缩成可验证的闭环」。\n\nA：开放式科研没有标准答案，模型说「我发现了 X」无法核对；把研究对象换成 21×21=441 种输入的隐藏规则，提交的规则可以逐一验证，不需要 LLM 当裁判。这是任务设计的胜利，不是模型规模的胜利。\n\nB 错在把参数量当成唯一变量。本章用 4B 级模型跑通了闭环，并进一步分析瓶颈在规模、思考模式还是 Agent 流程。\n\nC 对应本章的观察：思考模式对结果的影响可能比参数量更大。小模型开思考模式，效果可能超过更大的非思考模型。\n\nD 对应「提交关卡」：它能拦住与已有实验数据矛盾的结论，但模型能否据此改对，取决于它有没有能力理解矛盾。拦住错误不等于教会模型。\n\nE 是工程经验：工具越复杂，小模型越容易调用失败；工具应该匹配模型能力，而不是照着大模型的用法搬。\n\n判分边界：所选字母必须与参考答案完全一致。"
+  }
+]

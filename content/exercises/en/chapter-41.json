@@ -1,0 +1,87 @@
+[
+  {
+    "id": "ch41-ex01",
+    "chapter": "chapter-41",
+    "type": "code",
+    "difficulty": 3,
+    "minutes": 16,
+    "objective": "Extract and validate the final rule from the Agent's output",
+    "prompt": "The last step of Mini AI Scientist is \"submit the rule\". The model will give a JSON code block in a long text, in the form:\n\n```json\n{\"rule\": \"output a+b when a is even, otherwise output a*b\"}\n```\n\nPlease implement `extract_rule(text)`: find the **last** valid JSON code block in the text and return the `rule` string in it; if there is no code block, JSON parsing fails, or the non-empty `rule` field is missing, raise `ValueError`.\n\nThen implement `rule_is_complete(rule)`: return True when the rule text mentions input a, input b, and at least one condition (even/odd/greater than/less than/equal to, etc.) at the same time, otherwise False. It is only a rough filter before submission and does not judge whether the rule is correct.",
+    "starter": "import json\nimport re\n\n\ndef extract_rule(text):\n    # 返回最后一个合法代码块里的 rule\n    return ''\n\n\ndef rule_is_complete(rule):\n    # 粗筛：是否同时提到 a、b 和条件\n    return False\n\nprint(extract_rule('```json\\n{\"rule\": \"a+b\"}\\n```'))\n",
+    "checks": [
+      {
+        "kind": "assert_python",
+        "code": "assert extract_rule('```json\\n{\"rule\": \"a+b\"}\\n```') == 'a+b'",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "text = 'first\\n```json\\n{\"rule\": \"a*b\"}\\n```\\nmiddle\\n```json\\n{\"rule\": \"a+b\"}\\n```\\nend'\nassert extract_rule(text) == 'a+b', extract_rule(text)",
+        "weight": 14
+      },
+      {
+        "kind": "assert_python",
+        "code": "for _bad in ('no block here', '```json\\n{not json}\\n```', '```json\\n{\"other\": 1}\\n```', '```json\\n{\"rule\": \"   \"}\\n```'):\n    try:\n        extract_rule(_bad)\n        assert False, '应当报错: %r' % (_bad,)\n    except ValueError:\n        pass",
+        "weight": 16
+      },
+      {
+        "kind": "assert_python",
+        "code": "text = '```json\\n{\"rule\": \"a+b\"}\\n```\\n```python\\nprint(1)\\n```'\nassert extract_rule(text) == 'a+b', '非 json 代码块应被跳过'",
+        "weight": 12
+      },
+      {
+        "kind": "assert_python",
+        "code": "assert rule_is_complete('当 a 为偶数时输出 a+b，否则输出 a*b') is True\nassert rule_is_complete('a 和 b 相加') is False, '缺少条件'\nassert rule_is_complete('偶数时加一') is False, '缺少 b'",
+        "weight": 16
+      },
+      {
+        "kind": "assert_python",
+        "code": "for _rule in ('如果 a 大于 b 就输出 a，否则输出 b', 'a 等于 b 时输出 0，否则输出 a*b'):\n    assert rule_is_complete(_rule) is True, _rule\nfor _rule in ('', '输出 a+b', '当条件满足时输出结果'):\n    assert rule_is_complete(_rule) is False, _rule",
+        "weight": 16
+      },
+      {
+        "kind": "assert_python",
+        "code": "text = '说明\\n```JSON\\n{\"rule\": \"a-b\"}\\n```\\n'\nassert extract_rule(text) == 'a-b', '代码块标记大小写不敏感'",
+        "weight": 8
+      },
+      {
+        "kind": "assert_python",
+        "code": "text = '```json\\n{\"rule\": \"a+b\", \"note\": \"x\"}\\n```'\nassert extract_rule(text) == 'a+b'",
+        "weight": 8
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "import json\nimport re\n\n\ndef extract_rule(text):\n    blocks = re.findall(r'```(?:json)?\\s*(\\{.*?\\})\\s*```', text, re.S | re.I)\n    for block in reversed(blocks):\n        try:\n            payload = json.loads(block)\n        except json.JSONDecodeError:\n            continue\n        rule = payload.get('rule') if isinstance(payload, dict) else None\n        if isinstance(rule, str) and rule.strip():\n            return rule.strip()\n    raise ValueError('no usable rule block')\n\n\ndef rule_is_complete(rule):\n    if not isinstance(rule, str):\n        return False\n    text = rule.lower()\n    has_a = 'a' in text\n    has_b = 'b' in text\n    has_condition = any(word in text for word in ('\\u5076\\u6570', '\\u5947\\u6570', '\\u5927\\u4e8e', '\\u5c0f\\u4e8e', '\\u7b49\\u4e8e', 'even', 'odd', 'greater', 'less', 'equal'))\n    return has_a and has_b and has_condition\n",
+    "explanation": "In the Agent loop of this chapter, the model output is natural language mixed with code blocks, and the program cannot directly treat the whole text as a rule.\n\n`extract_rule` tests three things:\n\n1. **Take the last one**. The model may first write a draft and then revise it, and the last version is the one it wants to submit. Taking the first one would treat an intermediate product as the conclusion.\n2. **Only accept valid JSON**. If parsing fails, skip it and keep searching backward instead of reporting an error directly—there may be a truncated block earlier.\n3. **Field validation**. `rule` must be a non-empty string; a missing field, an empty string, or a wrong type all count as no usable submission.\n\n`rule_is_complete` is a **rough filter**, not a scorer. The real acceptance in this chapter is to check the rule one by one on 441 kinds of input, but that is costly; before submission, using low-cost rules to block obviously incomplete outputs (only saying \"output the result\", mentioning only one variable) can reduce invalid evaluations.\n\nNote its boundary: returning True does not mean the rule is correct, only that it is \"worth sending into the sandbox to run once\". This is also why this problem does not check rule correctness.\n\nScoring boundary: assertions are based on behavior, not on implementation style; code block language tag case and extra fields are both covered."
+  },
+  {
+    "id": "ch41-ex02",
+    "chapter": "chapter-41",
+    "type": "predict",
+    "difficulty": 1,
+    "minutes": 4,
+    "objective": "Spot what makes a small model research",
+    "prompt": "This chapter uses a 4B-level open-source model to complete the loop of \"hidden rule discovery\". Which of the following conclusions are consistent with this chapter? (Multiple choice)\n\nA. Compressing the task into a form with limited inputs that can be automatically checked is more feasible than letting the model do open-ended research\nB. Parameter count is the only determining factor; a 4B model cannot complete this kind of task\nC. Thinking mode may affect the result more than parameter count\nD. The submission gate can block conclusions that contradict the experimental data, but it cannot guarantee that the model will necessarily correct them\nE. Tool design should match model capability; tools that are too complex will instead drag down small models",
+    "checks": [
+      {
+        "kind": "output_choice",
+        "correct": [
+          "A",
+          "C",
+          "D",
+          "E"
+        ],
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "B is contrary to the actual measurements in this chapter: a 4B-level model can complete the task in the compressed loop, and this chapter also specifically compares the effects of thinking mode and parameter count.",
+    "explanation": "The core of this chapter is not \"letting the model do research\", but \"compressing research into a verifiable loop\".\n\nA: Open-ended research has no standard answer, and when the model says \"I discovered X\", it cannot be checked; by changing the research object to a hidden rule over 21×21=441 kinds of input, the submitted rule can be verified one by one without needing an LLM as judge. This is a victory of task design, not of model scale.\n\nB is wrong in treating parameter count as the only variable. This chapter uses a 4B-level model to run through the loop, and further analyzes whether the bottleneck is scale, thinking mode, or the Agent workflow.\n\nC corresponds to the observation in this chapter: the effect of thinking mode on the result may be greater than that of parameter count. A small model with thinking mode enabled may outperform a larger non-thinking model.\n\nD corresponds to the \"submission gate\": it can block conclusions that contradict existing experimental data, but whether the model can correct them accordingly depends on whether it has the ability to understand the contradiction. Blocking an error is not the same as teaching the model.\n\nE is engineering experience: the more complex the tool, the more likely a small model is to fail to call it; tools should match model capability rather than being copied from how large models use them.\n\nScoring boundary: the selected letters must exactly match the reference answer."
+  }
+]

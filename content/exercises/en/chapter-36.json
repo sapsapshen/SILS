@@ -1,0 +1,49 @@
+[
+  {
+    "id": "ch36-ex01",
+    "chapter": "chapter-36",
+    "type": "predict",
+    "difficulty": 1,
+    "minutes": 4,
+    "objective": "Determine the scope of the two SGLang optimizations",
+    "prompt": "This chapter uses two optimizations to explain why SGLang is fast. Which of the following statements are consistent with this chapter? (Multiple choice)\n\nA. Continuous batching lets new requests join the same batch while old requests are still generating, instead of waiting for the whole batch to finish\nB. RadixAttention organizes the KV Cache after a request finishes into a radix tree by prefix, so requests with the same prefix reuse the same segment\nC. Continuous batching first accumulates 16 requests before starting them together, so 16 people asking at the same time still have to wait 16 times as long\nD. Multi-turn conversations and Agents calling tools repeatedly can both benefit from prefix reuse, because the preceding content has to be resent each time\nE. As long as you switch the inference framework, answer quality will also improve by an order of magnitude in sync",
+    "checks": [
+      {
+        "kind": "output_choice",
+        "correct": [
+          "A",
+          "B",
+          "D"
+        ],
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "C is the opposite of the definition of continuous batching: requests join at any time and leave as soon as they finish writing, so there is no need to accumulate them, and concurrency does not turn into serial waiting. E confuses throughput with quality: the measurements in this chapter only compare completion time, output throughput, first-token latency, and prefix hit rate, and explicitly state that answer quality was not evaluated.",
+    "explanation": "Continuous batching solves \"the GPU waiting for data\": it groups the requests currently generating into a batch, reads the weights once and computes one token for each request, and when a request finishes writing it leaves while new requests join at any time. Its benefit comes from always having work to do within the batch, not from accumulating requests.\n\nRadixAttention solves \"repeated computation\": the KV Cache is not discarded hastily but organized by text prefix into a radix tree, and requests with the same prefix share the same branch. The fixed system prompt of knowledge-base Q&A, the history of multi-turn conversations, and the process that an Agent resends each time it calls a tool are all naturally long prefixes.\n\nC is wrong because it treats concurrency as queuing. In the 16-concurrency measurement in this chapter, SGLang's completion time was 3.70 seconds, while Hugging Face Transformers serve was 44.98 seconds, with throughput of 453.7 versus 37.3 token/s—concurrency did not turn into 16 times the waiting.\n\nE is wrong because it treats the inference framework as a model upgrade. The framework changes scheduling and caching, not the weights; this chapter also explicitly states that this test did not evaluate answer quality.\n\nGrading boundary: the selected letters must exactly match the reference answer; the reasoning after the options does not participate in grading."
+  },
+  {
+    "id": "ch36-ex02",
+    "chapter": "chapter-36",
+    "type": "reflect",
+    "difficulty": 2,
+    "minutes": 9,
+    "objective": "Plan and validate a SGLang deployment under load",
+    "prompt": "Suppose you want to connect a 4B model to a customer service system. At peak times about 200 requests are online at the same time, and each request carries the same 1500-character system prompt. Please write your deployment and validation plan: how to choose the environment and image, what to focus on in the startup parameters, how to take advantage of prefix reuse, which metrics to use to judge whether this deployment meets the standard, and how you would rule out \"it was just luck this round.\"",
+    "checks": [
+      {
+        "kind": "self_assessed",
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": true,
+      "criteria": "Whether it explains the matching of CUDA and image versions, model and precision selection, concurrency-related startup parameters (such as maximum concurrency/memory usage), the applicable conditions for prefix caching, and metrics such as TTFT/throughput/error rate; whether it mentions a fixed request set, repeated multi-round measurement, and comparison with a baseline framework, rather than only the feel of a single request"
+    },
+    "reference": "Environment: choose the image corresponding to CUDA 13 as required by this chapter (starting with ubuntu22.04-cuda13.0.3-py312-torch2.13.0); the old CUDA 12.1 image cannot run the latest version of SGLang; confirm that the free GPU's memory (A10 24GB) can hold the 4B model and the KV Cache. Use a small model like the Qwen3-4B-Instruct-2507 in this chapter, and choose BF16 precision according to memory.\n\nStartup parameters: pay attention to the maximum number of concurrent requests, the maximum length per request, and the memory utilization cap. A higher concurrency limit is not always better—if the KV Cache cannot hold it, swapping out or rejection will be triggered, and first-token latency will instead rise.\n\nPrefix reuse: customer service requests share a 1500-character system prompt, which is exactly the typical scenario for RadixAttention; confirm that the prefix is exactly the same (including spaces and punctuation), otherwise the tree will branch at the first differing character.\n\nMetrics: completion time, output throughput (token/s), average first-token latency TTFT, error rate and timeout rate, and prefix hit rate. Looking only at the speed of a single request is meaningless.\n\nRuling out chance: fix a set of requests (for example, 16 real traces) and run them repeatedly for multiple rounds, recording the values of each round rather than taking the best round; run the same batch of requests once against a baseline without the optimizations enabled (such as Transformers serve) for comparison; also observe the tail latency when long and short requests are mixed.\n\nFinally, state the boundary clearly: this test does not evaluate answer quality; quality requires a separate evaluation set.",
+    "explanation": "This question turns \"why it is fast\" from this chapter into \"how to prove it is fast.\"\n\nThe environment point is the easiest to get wrong: this chapter explicitly states that the latest version of SGLang requires CUDA 13, and the old image (CUDA 12.1) cannot install it; if the image version is chosen incorrectly, none of the later parameters matter.\n\nPrefix reuse is not automatic magic: it requires the prefix to actually be the same. In customer service systems, system prompts often carry timestamps, user IDs, or randomly ordered tool lists, which cause the prefix to branch at a very early position and make the hit rate plummet. So the plan should say \"confirm the prefix is stable,\" not just \"turn on prefix caching.\"\n\nMetrics must be looked at separately: high throughput but worse TTFT still gives users a bad experience; good average latency but exploding tail latency still causes timeouts at peak times. The comparison table in this chapter lists completion time, throughput, average first-token latency, and prefix hit rate separately for exactly this reason.\n\n\"Ruling out luck\" is the core of this question. Running only one round, picking only the best round, or testing only one request will all mistake noise for a conclusion. A fixed request set, multiple repeated rounds, and comparison with a baseline are the minimum requirements.\n\nThis question has no single answer; grading depends on whether the plan covers the environment, parameters, prefix conditions, metrics, and a controlled experiment."
+  }
+]

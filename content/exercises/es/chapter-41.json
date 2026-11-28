@@ -1,0 +1,87 @@
+[
+  {
+    "id": "ch41-ex01",
+    "chapter": "chapter-41",
+    "type": "code",
+    "difficulty": 3,
+    "minutes": 16,
+    "objective": "Extraer y validar la regla final del Agent",
+    "prompt": "El último paso de Mini AI Scientist es «enviar la regla». El modelo proporciona un bloque de código JSON dentro de un texto largo, con la forma:\n\n```json\n{\"rule\": \"a \\u4e3a\\u5076\\u6570\\u65f6\\u8f93\\u51fa a+b\\uff0c\\u5426\\u5219\\u8f93\\u51fa a*b\"}\n```\n\nImplementa `extract_rule(text)`: encuentra en el texto el **último** bloque de código JSON válido y devuelve la cadena `rule` que contiene; si no hay ningún bloque de código, falla el análisis JSON o falta un campo `rule` no vacío, lanza `ValueError`.\n\nDespués implementa `rule_is_complete(rule)`: devuelve True cuando el texto de la regla menciona a la vez la entrada a, la entrada b y al menos una condición (par/impar/mayor que/menor que/igual a, etc.); en caso contrario, False. Es solo un filtro previo al envío, no determina si la regla es correcta o incorrecta.",
+    "starter": "import json\nimport re\n\n\ndef extract_rule(text):\n    # 返回最后一个合法代码块里的 rule\n    return ''\n\n\ndef rule_is_complete(rule):\n    # 粗筛：是否同时提到 a、b 和条件\n    return False\n\nprint(extract_rule('```json\\n{\"rule\": \"a+b\"}\\n```'))\n",
+    "checks": [
+      {
+        "kind": "assert_python",
+        "code": "assert extract_rule('```json\\n{\"rule\": \"a+b\"}\\n```') == 'a+b'",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "text = 'first\\n```json\\n{\"rule\": \"a*b\"}\\n```\\nmiddle\\n```json\\n{\"rule\": \"a+b\"}\\n```\\nend'\nassert extract_rule(text) == 'a+b', extract_rule(text)",
+        "weight": 14
+      },
+      {
+        "kind": "assert_python",
+        "code": "for _bad in ('no block here', '```json\\n{not json}\\n```', '```json\\n{\"other\": 1}\\n```', '```json\\n{\"rule\": \"   \"}\\n```'):\n    try:\n        extract_rule(_bad)\n        assert False, '应当报错: %r' % (_bad,)\n    except ValueError:\n        pass",
+        "weight": 16
+      },
+      {
+        "kind": "assert_python",
+        "code": "text = '```json\\n{\"rule\": \"a+b\"}\\n```\\n```python\\nprint(1)\\n```'\nassert extract_rule(text) == 'a+b', '非 json 代码块应被跳过'",
+        "weight": 12
+      },
+      {
+        "kind": "assert_python",
+        "code": "assert rule_is_complete('当 a 为偶数时输出 a+b，否则输出 a*b') is True\nassert rule_is_complete('a 和 b 相加') is False, '缺少条件'\nassert rule_is_complete('偶数时加一') is False, '缺少 b'",
+        "weight": 16
+      },
+      {
+        "kind": "assert_python",
+        "code": "for _rule in ('如果 a 大于 b 就输出 a，否则输出 b', 'a 等于 b 时输出 0，否则输出 a*b'):\n    assert rule_is_complete(_rule) is True, _rule\nfor _rule in ('', '输出 a+b', '当条件满足时输出结果'):\n    assert rule_is_complete(_rule) is False, _rule",
+        "weight": 16
+      },
+      {
+        "kind": "assert_python",
+        "code": "text = '说明\\n```JSON\\n{\"rule\": \"a-b\"}\\n```\\n'\nassert extract_rule(text) == 'a-b', '代码块标记大小写不敏感'",
+        "weight": 8
+      },
+      {
+        "kind": "assert_python",
+        "code": "text = '```json\\n{\"rule\": \"a+b\", \"note\": \"x\"}\\n```'\nassert extract_rule(text) == 'a+b'",
+        "weight": 8
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "import json\nimport re\n\n\ndef extract_rule(text):\n    blocks = re.findall(r'```(?:json)?\\s*(\\{.*?\\})\\s*```', text, re.S | re.I)\n    for block in reversed(blocks):\n        try:\n            payload = json.loads(block)\n        except json.JSONDecodeError:\n            continue\n        rule = payload.get('rule') if isinstance(payload, dict) else None\n        if isinstance(rule, str) and rule.strip():\n            return rule.strip()\n    raise ValueError('no usable rule block')\n\n\ndef rule_is_complete(rule):\n    if not isinstance(rule, str):\n        return False\n    text = rule.lower()\n    has_a = 'a' in text\n    has_b = 'b' in text\n    has_condition = any(word in text for word in ('\\u5076\\u6570', '\\u5947\\u6570', '\\u5927\\u4e8e', '\\u5c0f\\u4e8e', '\\u7b49\\u4e8e', 'even', 'odd', 'greater', 'less', 'equal'))\n    return has_a and has_b and has_condition\n",
+    "explanation": "En el bucle del Agent de este capítulo, la salida del modelo es lenguaje natural entremezclado con bloques de código, y el programa no puede tomar todo el texto como la regla directamente.\n\n`extract_rule` evalúa tres cosas:\n\n1. **Tomar el último**. El modelo puede escribir primero un borrador y luego corregirlo; la última versión es la que quiere enviar. Tomar el primero haría pasar un producto intermedio por conclusión.\n2. **Aceptar solo JSON válido**. Si el análisis falla hay que saltarlo y seguir buscando hacia atrás, en lugar de lanzar un error de inmediato: puede haber delante un bloque truncado a medias.\n3. **Validación de campos**. `rule` debe ser una cadena no vacía; si falta el campo, es una cadena vacía o el tipo es incorrecto, se considera que no hay un envío utilizable.\n\n`rule_is_complete` es un **filtro previo**, no un evaluador. La verdadera verificación de este capítulo consiste en comprobar la regla una por una sobre 441 entradas, pero eso tiene un coste alto; antes de enviar, descartar con una regla de bajo coste las salidas evidentemente incompletas (que solo dicen «salida del resultado» o mencionan una sola variable) reduce las evaluaciones inválidas.\n\nConviene notar sus límites: devolver True no significa que la regla sea correcta, solo que «merece la pena ejecutarla una vez en el sandbox». Esta es también la razón por la que este ejercicio no comprueba la corrección de la regla.\n\nCriterio de evaluación: se evalúa por aserciones de comportamiento, sin comparar la forma de implementación; se cubren tanto las mayúsculas y minúsculas de la etiqueta de lenguaje del bloque de código como los campos sobrantes."
+  },
+  {
+    "id": "ch41-ex02",
+    "chapter": "chapter-41",
+    "type": "predict",
+    "difficulty": 1,
+    "minutes": 4,
+    "objective": "Variables clave para un ciclo de investigacion",
+    "prompt": "Este capítulo completa el ciclo cerrado de «descubrimiento de reglas ocultas» con un modelo de código abierto de nivel 4B. ¿Cuáles de las siguientes conclusiones coinciden con este capítulo? (opción múltiple)\n\nA. Comprimir la tarea en una forma con entradas limitadas y verificable automáticamente es más viable que pedir al modelo que haga investigación abierta\nB. El número de parámetros es el único factor determinante; un modelo de 4B no puede completar este tipo de tareas\nC. El modo de pensamiento puede influir más en el resultado que el número de parámetros\nD. La etapa de envío puede frenar conclusiones que contradicen los datos experimentales, pero no garantiza que el modelo corrija correctamente\nE. El diseño de las herramientas debe ajustarse a la capacidad del modelo; herramientas demasiado complejas pueden hundir a un modelo pequeño",
+    "checks": [
+      {
+        "kind": "output_choice",
+        "correct": [
+          "A",
+          "C",
+          "D",
+          "E"
+        ],
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "B es contrario a las mediciones de este capítulo: un modelo de nivel 4B puede completar la tarea en el ciclo cerrado comprimido, y este capítulo compara además la influencia del modo de pensamiento y del número de parámetros.",
+    "explanation": "El núcleo de este capítulo no es «hacer que el modelo investigue», sino «comprimir la investigación en un ciclo cerrado verificable».\n\nA: la investigación abierta no tiene respuesta estándar, y si el modelo dice «he descubierto X» no se puede verificar; al cambiar el objeto de estudio por una regla oculta sobre 21×21=441 entradas, la regla enviada se puede verificar una por una sin necesidad de que un LLM actúe como juez. Esto es una victoria del diseño de la tarea, no del tamaño del modelo.\n\nB se equivoca al tomar el número de parámetros como única variable. Este capítulo cierra el ciclo con un modelo de nivel 4B y además analiza si el cuello de botella está en la escala, en el modo de pensamiento o en el flujo del Agent.\n\nC corresponde a la observación de este capítulo: la influencia del modo de pensamiento en el resultado puede ser mayor que la del número de parámetros. Un modelo pequeño con modo de pensamiento activado puede superar a un modelo más grande sin modo de pensamiento.\n\nD corresponde a la «etapa de envío»: puede frenar conclusiones que contradicen los datos experimentales existentes, pero que el modelo pueda corregir a partir de ello depende de si tiene capacidad para entender la contradicción. Frenar un error no equivale a enseñar al modelo.\n\nE es experiencia de ingeniería: cuanto más compleja es la herramienta, más fácil es que un modelo pequeño falle al invocarla; las herramientas deben ajustarse a la capacidad del modelo, no copiarse del uso que haría un modelo grande.\n\nCriterio de evaluación: las letras elegidas deben coincidir exactamente con la respuesta de referencia."
+  }
+]

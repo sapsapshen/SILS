@@ -1,0 +1,49 @@
+[
+  {
+    "id": "ch37-ex01",
+    "chapter": "chapter-37",
+    "type": "predict",
+    "difficulty": 1,
+    "minutes": 4,
+    "objective": "Revisar las restricciones de extraer tareas",
+    "prompt": "Este capítulo define «extraer tareas pendientes de notas rápidas» como una tarea estructurada. ¿Cuáles de las siguientes salidas cumplen con las convenciones dadas en este capítulo? (opción múltiple)\n\nA. task usa la frase de acción del texto original, sin cambiarla por una paráfrasis propia\nB. Cuando el texto original no indica una hora, due_text devuelve null, en lugar de inventar una hora\nC. Cuando el texto original no indica explícitamente una categoría, se puede añadir «vida» según el sentido común\nD. Los asuntos ya completados o cancelados no se incluyen en las tareas pendientes\nE. Varios asuntos se ordenan por hora estimada de finalización, de más temprano a más tarde",
+    "checks": [
+      {
+        "kind": "output_choice",
+        "correct": [
+          "A",
+          "B",
+          "D"
+        ],
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "C es contraria a la convención de este capítulo: category solo se rellena cuando el texto original indica explícitamente «trabajo, vida, estudio, otros»; de lo contrario es null. E también es incorrecta: varios asuntos se ordenan según el orden de aparición en el texto original, no por hora.",
+    "explanation": "Este capítulo primero acota la tarea y luego habla del entrenamiento. La entrada es un fragmento de notas rápidas y la salida es una estructura fija:\n\n{\"tasks\": [{\"task\": \"\\u63d0\\u4ea4\\u9879\\u76ee\\u62a5\\u544a\", \"due_text\": \"\\u5468\\u4e9418\\u70b9\", \"category\": \"\\u5de5\\u4f5c\"}, {\"task\": \"\\u6d47\\u82b1\", \"due_text\": null, \"category\": null}]}\n\nA corresponde a «task usa la frase de acción del texto original»: cambiarla por una paráfrasis propia hace perder información del original y también dificulta que los programas posteriores la contrasten.\n\nB corresponde a «due_text conserva la descripción temporal del texto original»: si no se indica, se deja vacío. Inventar una hora parece más completo, pero en realidad crea datos erróneos.\n\nD corresponde a «los asuntos ya completados o cancelados no se incluyen en las tareas pendientes»: el límite de esta tarea es «claro y aún no completado».\n\nC falla al tratar la compleción por sentido común como una capacidad del modelo. Este capítulo exige que category solo se rellene cuando el texto original lo indique explícitamente; de lo contrario, null: añadir «vida» haría que las etapas posteriores tomen las suposiciones del modelo como hechos del usuario.\n\nE falla en el orden: este capítulo exige ordenar según el orden de aparición, porque el orden del texto original es en sí mismo una pista de la narración del usuario; reordenar por hora alteraría la verificabilidad.\n\nLímite de puntuación: las letras elegidas deben coincidir exactamente con la respuesta de referencia."
+  },
+  {
+    "id": "ch37-ex02",
+    "chapter": "chapter-37",
+    "type": "reflect",
+    "difficulty": 2,
+    "minutes": 10,
+    "objective": "Convertir una idea movil en tarea entrenable",
+    "prompt": "Elige una tarea pequeña que quieras completar sin conexión en el móvil (por ejemplo, extraer acuerdos de un historial de chat, extraer importes de un recibo de compra) y, siguiendo el método de este capítulo, escribe: la estructura exacta de entrada y salida, cómo tratar los casos límite, de dónde vienen los datos de entrenamiento, por qué usar LoRA en lugar de un ajuste fino completo, y cómo piensas verificar tras la cuantización que no ha habido una degradación evidente.",
+    "checks": [
+      {
+        "kind": "self_assessed",
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": true,
+      "criteria": "Si se acota la tarea a una estructura de salida única y decidible; si se definen límites como valores nulos, múltiples asuntos, horas coloquiales, etc.; si se explica el origen de los datos y el criterio de etiquetado; si se explican los compromisos de LoRA y la cuantización; si se ofrece un método de verificación en el dispositivo y un rango de degradación aceptable"
+    },
+    "reference": "Tarea: hacer solo una cosa, con una estructura de salida fija. Por ejemplo, «extraer del historial de chat la hora y el asunto acordados por ambas partes», salida {\"items\":[{\"what\":...,\"when\":...,\"who\":...}]}, con null en los campos ausentes.\n\nLímites: si no hay acuerdo, devolver un array vacío; las horas coloquiales («el miércoles por la tarde») se conservan en el texto original en lugar de convertirse a una fecha absoluta; un asunto mencionado varias veces se conserva una sola vez; los acuerdos ya cancelados no se incluyen.\n\nDatos: muestrear de forma anonimizada a partir del propio historial de chat y etiquetar con el mismo criterio; separar entrenamiento/validación/prueba, y el conjunto de prueba no debe proceder de fragmentos solapados de la misma conversación que el de entrenamiento.\n\nPor qué LoRA: el volumen de datos en escenarios móviles es pequeño (de cientos a miles de registros), y el ajuste fino completo tiende al sobreajuste y tiene un coste alto; LoRA solo entrena adaptadores de bajo rango, con memoria y tiempo controlables, y también facilita la reversión.\n\nVerificación tras la cuantización: comparar en el mismo conjunto de prueba tres niveles: base, LoRA y tras cuantización; observar la precisión a nivel de campo (calculando what/when/who por separado) en lugar de la coincidencia exacta de la cadena completa; además, medir en el dispositivo real la latencia del primer token, el pico de memoria y la estabilidad en ejecución continua durante 10 minutos. La degradación aceptable debe quedar escrita de antemano, por ejemplo, que la precisión por campo no caiga más de 2 puntos porcentuales.\n\nPor último: registrar tanto «la salida del modelo» como «las modificaciones manuales» para usarlas como datos de la siguiente ronda.",
+    "explanation": "Este ejercicio evalúa la traducción de «quiero que el móvil me organice las cosas» a una tarea de ingeniería.\n\nEl primer nivel es la acotación. Cuanto más amplia es la tarea, más difícil es juzgar si es correcta o incorrecta; este capítulo solo hace «tareas pendientes claras y aún no completadas», y esa es la razón. Solo con una estructura de salida fija se puede calcular la precisión campo por campo.\n\nEl segundo nivel son los límites. Horas coloquiales, menciones repetidas, completado/cancelado, ausencia total de tareas pendientes: si estos casos no se especifican con claridad, el modelo solo puede adivinar, y los resultados adivinados no se pueden aceptar. Este capítulo usa null para indicar «el texto original no lo dice», un diseño muy importante: un valor vacío es un hecho verificable; inventarlo no lo es.\n\nEl tercer nivel son los datos. Los datos en escenarios móviles suelen provenir de registros personales; la anonimización, la estratificación y la no superposición entre entrenamiento y prueba influyen más en el resultado que la elección del modelo.\n\nEl cuarto nivel son los compromisos. LoRA no es «más avanzado», sino una elección razonable cuando hay pocos datos y el coste es sensible; la cuantización tampoco es gratuita: hay que demostrar con métricas en el dispositivo y precisión a nivel de campo que la degradación es aceptable.\n\nEste ejercicio no tiene una respuesta estándar; la puntuación depende de si se cubren las cinco cuestiones: estructura de la tarea, límites, datos, método y verificación."
+  }
+]

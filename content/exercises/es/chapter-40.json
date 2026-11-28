@@ -1,0 +1,50 @@
+[
+  {
+    "id": "ch40-ex01",
+    "chapter": "chapter-40",
+    "type": "predict",
+    "difficulty": 1,
+    "minutes": 4,
+    "objective": "Que debe incluir el prompt de un poster",
+    "prompt": "En este capítulo se usa Qwen-Image-2.1-Turbo para generar un póster de conocimiento químico. ¿Qué contenidos de los siguientes deberían escribirse en el prompt? (Selección múltiple)\n\nA. Conocimientos y ecuaciones de reacción ya verificados, presentados tal como aparecen en el texto original\nB. La división de zonas de la imagen y el orden de lectura, por ejemplo, montaje experimental a la izquierda, fenómenos y conclusiones a la derecha\nC. Dejar que el modelo complete por su cuenta las ecuaciones químicas de las que no se tiene seguridad; la imagen quedará más completa\nD. Parámetros como el tamaño de salida y la cantidad, así como el texto pseudoescrito o las faltas de ortografía que deben evitarse\nE. Tras la generación, verificar palabra por palabra el texto del póster y luego decidir si se adopta",
+    "checks": [
+      {
+        "kind": "output_choice",
+        "correct": [
+          "A",
+          "B",
+          "D",
+          "E"
+        ],
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "C es contraria a la intención: las ecuaciones del póster deben provenir de contenidos de conocimiento ya verificados; dejar que el modelo las complete por su cuenta consolidaría errores en el material didáctico. El enfoque de este capítulo es organizar «contenidos de conocimiento ya verificados» dentro del prompt, no dejar que el modelo adivine.",
+    "explanation": "El punto clave de este capítulo no es «la IA sabe dibujar», sino «cómo lograr que la imagen generada sirva para la enseñanza».\n\nA: El contenido de conocimiento debe verificarse primero. El enfoque de este capítulo es organizar los fenómenos experimentales, las ecuaciones de reacción y los puntos de conocimiento clave como parte del prompt; el modelo se encarga de presentarlos, no de inventarlos.\n\nB: Un póster didáctico tiene un orden de lectura. Especificar bien las zonas (antes del experimento/después del experimento, montaje/fenómenos/conclusiones) es más eficaz que acumular adjetivos; de lo contrario, el modelo colocará los elementos al azar, y se verá llamativo pero no se explicará con claridad.\n\nD: Parámetros como el tamaño, la cantidad y la semilla aleatoria determinan la reproducibilidad; las restricciones negativas (sin texto pseudoescrito, sin faltas de ortografía, sin montajes sobrantes) pueden reducir notablemente el retrabajo.\n\nE: El texto generado por los modelos de imagen aún puede contener errores, especialmente los subíndices de las fórmulas químicas y la terminología en chino. Tras la generación es obligatorio verificar palabra por palabra; esta es también la razón por la que este capítulo insiste repetidamente en «revisar y ajustar según los resultados».\n\nC falla al tratar el modelo generativo como fuente de conocimiento. El costo de los errores en materiales didácticos es muy alto; las ecuaciones completadas por el modelo, aunque parezcan razonables, no pueden adoptarse directamente.\n\nCriterio de puntuación: las letras seleccionadas deben coincidir exactamente con la respuesta de referencia."
+  },
+  {
+    "id": "ch40-ex02",
+    "chapter": "chapter-40",
+    "type": "reflect",
+    "difficulty": 2,
+    "minutes": 10,
+    "objective": "Escribir un prompt de poster verificable",
+    "prompt": "Elige un punto de conocimiento que vayas a explicar (puede ser de física, química, biología o historia) y escribe un prompt de póster que pueda usarse directamente en un modelo de generación de imágenes: qué contenidos de conocimiento ya verificados incluye, cómo se dividen las zonas de la imagen, cómo se organiza el texto, qué debe evitarse y con qué lista verificarás cada punto tras la generación.",
+    "checks": [
+      {
+        "kind": "self_assessed",
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": true,
+      "criteria": "Si separa el contenido de conocimiento de la descripción visual; si ofrece una división clara de zonas y orden de lectura; si incluye tamaño/texto/restricciones negativas; si proporciona una lista de verificación tras la generación (fórmulas, unidades, subíndices, terminología, coherencia entre imagen y texto)"
+    },
+    "reference": "Contenido de conocimiento: primero enumera los hechos que aparecerán en el póster, cada uno con una fuente localizable en el libro de texto o en materiales ya verificados. Por ejemplo, «el hierro reacciona con el sulfato de cobre, la disolución pasa de azul a verde claro y en la superficie del clavo de hierro se deposita un sólido rojo» y «Fe + CuSO4 → FeSO4 + Cu». Escribe la ecuación y el fenómeno por separado para evitar que el modelo los mezcle en una sola frase.\n\nMaquetación: a la izquierda, dibuja el montaje comparativo antes y después del experimento; a la derecha arriba, coloca la ecuación; a la derecha abajo, los fenómenos y las conclusiones; el orden de lectura es de izquierda a derecha y de arriba abajo. Describe con una frase qué va en cada zona, sin acumular adjetivos.\n\nTexto: tres niveles —título, ecuación y palabras clave— con tamaños de fuente decrecientes; especifica claramente que sea en chino y evita que aparezcan marcadores de posición en inglés o texto pseudoescrito.\n\nRestricciones negativas: sin instrumentos sobrantes, sin subíndices incorrectos, sin generar en la imagen datos que no puedan verificarse, sin marcas de agua.\n\nParámetros: elige el tamaño según el uso (16:9 para material de clase o 3:4 para póster), genera varias imágenes a la vez y elige una, fija la semilla aleatoria para facilitar la reproducibilidad.\n\nLista de verificación: ajuste y subíndices de la ecuación, si los colores y fenómenos coinciden con el libro de texto, unidades y símbolos, uso de términos, correspondencia entre imagen y texto, y si hay información adicional inventada por el modelo. Si algún punto no se cumple, ajusta el prompt y vuelve a generar, en lugar de retocar la imagen manualmente para ocultarlo.",
+    "explanation": "Este ejercicio convierte «haz que la IA dibuje una imagen» en «haz que la IA maquete según conocimientos ya verificados».\n\nLa distinción más importante es entre **contenido de conocimiento** y **descripción visual**. El contenido de conocimiento debe provenir de materiales verificados; el modelo solo se encarga de presentarlo; la descripción visual (zonas, colores, composición) es la parte en la que el modelo puede desenvolverse libremente. Si ambos se escriben mezclados, el modelo tenderá a tomar «parece razonable» como «es correcto de hecho».\n\nLa división de zonas no es una cuestión estética, sino didáctica. El lector necesita saber qué mirar primero y qué después; sin división de zonas, el modelo colocará todos los elementos de forma uniforme, con alta densidad de información pero sin explicar la causalidad.\n\nLas restricciones negativas suelen ser más eficaces que las descripciones positivas. Los modelos de imagen tienden a «completar»; si no se les dice qué no quieres, añadirán instrumentos, flechas y texto decorativo.\n\nLa lista de verificación es el último filtro. Los subíndices de las fórmulas químicas, las mayúsculas y minúsculas de las unidades y el uso de los términos son puntos en los que el modelo se equivoca fácilmente y que una persona detecta de un vistazo; verificar punto por punto es mucho más ejecutable que un «me parece que algo no está bien» global.\n\nEste ejercicio no tiene una respuesta única; la puntuación evalúa si cubre las cinco partes: conocimiento, maquetación, texto, restricciones negativas y verificación."
+  }
+]

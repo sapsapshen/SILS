@@ -1,0 +1,50 @@
+[
+  {
+    "id": "ch38-ex01",
+    "chapter": "chapter-38",
+    "type": "predict",
+    "difficulty": 1,
+    "minutes": 4,
+    "objective": "Check the inspection assistant boundaries",
+    "prompt": "This chapter limits the inspection assistant to \"surface phenomena visible in photos.\" Which of the following practices are consistent with the design in this chapter? (Multiple choice)\n\nA. The model judges from the photo whether the circuit is damaged and gives a conclusion on whether shutdown is needed\nB. The output only describes phenomena visible in the photo, such as a broken lampshade or debris scattered on the ground\nC. What the model generates is a draft, which is saved only after a staff member confirms or modifies it\nD. When there is no network, save locally on the phone first, and sync to the ledger when there is a network\nE. Use the record ID for idempotency to avoid submitting the same record repeatedly",
+    "checks": [
+      {
+        "kind": "output_choice",
+        "correct": [
+          "B",
+          "C",
+          "D",
+          "E"
+        ],
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "A is the opposite of the boundary in this chapter: the first version only handles surface phenomena that can be photographed in public areas, does not judge from photos whether the circuit is damaged, and does not decide on shutdown, repair, or equipment replacement.",
+    "explanation": "The first thing in this chapter is not choosing a model, but turning the requirement into a clear model task:\n\nThe first version only handles surface phenomena that can be photographed in public areas—broken lampshades, debris scattered on the ground, visible stains on walls. It does not determine from photos whether the circuit is damaged, nor does it decide whether shutdown, repair, or equipment replacement is needed. This is not because the model is not capable enough, but because of the boundary of responsibility: the model should not give conclusions about things that cannot be seen in photos.\n\nB is the positive statement of this boundary.\n\nC is the product boundary: the model produces a draft, and a human confirms it. Inspection records are used for subsequent processing, and the cost of an erroneous record is higher than pressing confirm one more time.\n\nD is the on-site constraint: inspection locations often have poor network, so saving locally first and syncing later is a prerequisite for usability.\n\nE is the correctness issue of synchronization: offline queues retry, and without an idempotency key the same record will be submitted multiple times. This chapter devotes a section to \"using record IDs to prevent duplicate submission.\"\n\nGrading boundary: the selected letters must exactly match the reference answer."
+  },
+  {
+    "id": "ch38-ex02",
+    "chapter": "chapter-38",
+    "type": "reflect",
+    "difficulty": 2,
+    "minutes": 10,
+    "objective": "Plan failure handling for the inspection app",
+    "prompt": "Continuing with the inspection assistant from this chapter, write how you would handle these three types of failures: the model misjudging reflections in the photo as stains, saving succeeding but synchronization failing when the phone is offline, and the same photo being submitted repeatedly. For each type, explain what the user sees, how the system provides a fallback, and what metrics you use to judge that it is truly solved.",
+    "checks": [
+      {
+        "kind": "self_assessed",
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": true,
+      "criteria": "Whether model errors, network errors, and duplicate submission are distinguished as three types of problems; whether each type is given a user-visible state and executable action; whether the coordination of the local queue, retries, and idempotency key is explained; whether quantifiable acceptance metrics are given (false positive rate, synchronization success rate, duplicate rate)"
+    },
+    "reference": "Reflection misjudgment: the model output is only a draft, and the interface marks the \"suspected stain\" as pending confirmation; staff can change it to \"reflection/normal\" with one click; at the same time, the original image and the model draft are retained for traceability. Acceptance looks at the manual modification rate and false positive rate, not just model confidence.\n\nOffline synchronization failure: saving and synchronization are split into two states—\"saved to this device\" and \"synced to the ledger.\" When synchronization fails, clearly display the number pending synchronization and the last attempt time, and provide manual retry; the queue is first-in-first-out, and failures do not block subsequent records. Acceptance looks at the synchronization success rate, average synchronization delay, and whether the queue still exists after power loss or process kill.\n\nDuplicate submission: each record is assigned a record ID when it is generated and carries it when submitted; the server is idempotent by ID, and duplicate requests return the same result instead of creating a new one. The client checks local status before retrying to avoid mindless resending. Acceptance looks at the duplicate record rate and the total number of records after retries.\n\nCommon principle: model errors are handled by \"draft + human confirmation,\" network errors by \"local persistence + retryable queue,\" and duplicate submission by \"idempotency key.\" These three types of problems cannot be glossed over with a single \"retry\" button.\n\nFinally, write these metrics into acceptance: field accuracy, manual modification rate, synchronization success rate, duplicate rate, and the time from taking a photo to completing synchronization for a single record.",
+    "explanation": "This question pushes \"the demo works\" to \"usable on site.\"\n\nThe three types of failures are completely different in nature and cannot use the same trick:\n\n- Model misjudgment is a **cognitive error**, and the fallback can only rely on humans. Therefore the draft must be editable, and the original image and the model's original output must be retained; otherwise, problems cannot be reviewed afterward.\n- Synchronization failure is a **state error**, and the fallback relies on persistence and retry. The key is to display \"saved\" and \"synced\" separately—if the interface has only one \"success,\" users will think the data is already in the ledger.\n- Duplicate submission is a **protocol error**, and the fallback relies on an idempotency key. This chapter uses the record ID for exactly this idea: retries are allowed, duplicate entries are not.\n\nAcceptance metrics must be falsifiable. Looking only at \"99% synchronization success rate\" is not enough; you also need to see whether users know about the failing 1% and whether they can recover by themselves; looking only at \"low duplicate rate\" is not enough; you also need to see whether duplicates still do not occur under a retry storm.\n\nThis question has no single answer; grading looks at whether the three types are handled separately, whether there are user-visible states, and whether there are quantifiable acceptance criteria."
+  }
+]

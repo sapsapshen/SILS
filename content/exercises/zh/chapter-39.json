@@ -1,0 +1,87 @@
+[
+  {
+    "id": "ch39-ex01",
+    "chapter": "chapter-39",
+    "type": "code",
+    "difficulty": 3,
+    "minutes": 15,
+    "objective": "把候选字母的分数变成可用的选项与概率",
+    "prompt": "本章的决策流程是「候选字母分数 → softmax 概率 → 取最大项 → 映射回选项」。请实现两个函数：\n\n`letter_probabilities(scores)`：`scores` 是 `{字母: 分数}` 的字典，返回 `{字母: 概率}`，概率之和为 1；空字典抛 `ValueError`。\n\n`choose_option(scores)`：返回 `(概率最高的字母, 该字母的概率)`；分数相同时返回字母序最小的那个，保证结果稳定；空字典抛 `ValueError`。",
+    "starter": "import math\n\n\ndef letter_probabilities(scores):\n    # 返回 {字母: 概率}\n    return {}\n\n\ndef choose_option(scores):\n    # 返回 (字母, 概率)\n    return ('', 0.0)\n\nprint(choose_option({'A': 1.0, 'B': 2.0}))\n",
+    "checks": [
+      {
+        "kind": "assert_python",
+        "code": "p = letter_probabilities({'A': 0.0, 'B': 0.0})\nassert abs(sum(p.values()) - 1.0) < 1e-12, p\nassert abs(p['A'] - 0.5) < 1e-12 and abs(p['B'] - 0.5) < 1e-12, p",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "p = letter_probabilities({'A': 1.0, 'B': 2.0, 'C': 3.0})\nassert abs(sum(p.values()) - 1.0) < 1e-12, p\nassert p['C'] > p['B'] > p['A'], p",
+        "weight": 12
+      },
+      {
+        "kind": "assert_python",
+        "code": "p = letter_probabilities({'A': 1000.0, 'B': 0.0})\nassert abs(p['A'] - 1.0) < 1e-9, '大分数不能溢出: %r' % (p,)",
+        "weight": 14
+      },
+      {
+        "kind": "assert_python",
+        "code": "p = letter_probabilities({'A': -1000.0, 'B': 0.0})\nassert p['B'] > 0.999, p",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "letter, prob = choose_option({'A': 0.2, 'B': 0.9, 'C': 0.4})\nassert letter == 'B', letter\nassert abs(prob - letter_probabilities({'A': 0.2, 'B': 0.9, 'C': 0.4})['B']) < 1e-12, prob",
+        "weight": 12
+      },
+      {
+        "kind": "assert_python",
+        "code": "for _scores in ({'A': 1.0, 'B': 1.0}, {'B': 2.0, 'A': 2.0}, {'C': 1.0, 'A': 1.0, 'B': 1.0}):\n    assert choose_option(_scores)[0] == min(_scores), (_scores, choose_option(_scores))",
+        "weight": 14
+      },
+      {
+        "kind": "assert_python",
+        "code": "for _bad in ({}, []):\n    try:\n        letter_probabilities(_bad)\n        assert False, '空输入必须报错'\n    except (ValueError, TypeError):\n        pass\n    try:\n        choose_option(_bad)\n        assert False, '空输入必须报错'\n    except (ValueError, TypeError):\n        pass",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "import math\nfor _scores in ({'A': 0.5}, {'A': 2.0, 'B': -1.0}, {'A': 0.0, 'B': 0.0, 'C': 0.0, 'D': 0.0}):\n    _p = letter_probabilities(_scores)\n    _want = {k: math.exp(v - max(_scores.values())) for k, v in _scores.items()}\n    _total = sum(_want.values())\n    _want = {k: v / _total for k, v in _want.items()}\n    for k in _scores:\n        assert abs(_p[k] - _want[k]) < 1e-12, (_scores, k, _p[k], _want[k])",
+        "weight": 18
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "import math\n\n\ndef letter_probabilities(scores):\n    if not scores:\n        raise ValueError('scores must not be empty')\n    top = max(scores.values())\n    weights = {letter: math.exp(value - top) for letter, value in scores.items()}\n    total = sum(weights.values())\n    return {letter: weight / total for letter, weight in weights.items()}\n\n\ndef choose_option(scores):\n    probabilities = letter_probabilities(scores)\n    best = min(probabilities, key=lambda letter: (-probabilities[letter], letter))\n    return best, probabilities[best]\n",
+    "explanation": "这道题对应本章最核心的一段代码：模型只给出候选字母的分数，程序要把分数变成概率，再取最大项。\n\n`letter_probabilities` 的关键是**数值稳定**。直接 `math.exp(1000)` 会溢出；先减去最大值再取指数，概率完全不变，但不会溢出。测试里用 ±1000 的分数专门打这个点。\n\n归一化也容易被忽略：exp 之后的数不是概率，必须除以总和。只返回 exp 结果，概率之和就不是 1，下游拿它做阈值判断会全错。\n\n`choose_option` 的关键是**确定性**。分数相同时如果依赖字典顺序或浮点比较的偶然结果，同一份输入可能给出不同答案，排查起来非常痛苦。题目要求字母序最小，是一个可测试的约定。\n\n空输入必须报错而不是返回空结果：决策任务没有候选项，是调用方的问题，静默返回会让错误传到更远的地方。\n\n判分边界：检查项按行为断言，不比对实现写法；允许用 numpy，但参考答案只用标准库。"
+  },
+  {
+    "id": "ch39-ex02",
+    "chapter": "chapter-39",
+    "type": "predict",
+    "difficulty": 1,
+    "minutes": 4,
+    "objective": "判断「决策模型」能保证什么、不能保证什么",
+    "prompt": "本章把决策模型描述成「输入背景、问题和候选项，返回结果与概率」。下面哪些说法正确？（多选）\n\nA. 返回概率让程序能做阈值判断，但概率高不等于结论一定对\nB. 候选项应当互斥且覆盖所有可能，否则模型只能在不完整的选项里挑一个\nC. 字母与选项的映射必须和提示中保持一致，否则程序取回的答案会张冠李戴\nD. 所谓「零幻觉」意味着这类模型不可能选错\nE. 把分数转成概率后，可以用最大概率与次大概率的差距判断是否需要人工复核",
+    "checks": [
+      {
+        "kind": "output_choice",
+        "correct": [
+          "A",
+          "B",
+          "C",
+          "E"
+        ],
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "D 与本章的说法相反：零幻觉描述的是输出被约束在给定候选项内，不表示判断本身不会错。模型仍可能选错，概率只是让程序知道它有多确信。",
+    "explanation": "本章把决策单独做成接口，价值在于「输出可被程序直接使用」，而不是「输出一定正确」。\n\nA：概率是置信度，不是正确性。概率 0.99 也可能选错，只是模型很确信。程序可以用阈值决定是否转人工。\n\nB：候选项是模型的选择空间。选项不互斥（例如同时有「退款」和「退货退款」），模型只能在重叠的选项里挑，结果无法解释；选项漏掉真实情况，模型也只能勉强选一个。\n\nC：提示里说 A 是「查订单」、B 是「改地址」，代码里映射反了，模型答对也会被程序解读错。这是工程上最常见、也最容易测出来的错误。\n\nD：零幻觉指的是不给模型自由生成的空间——它只能从候选项里选，不能编造第五个选项。但「选错给定选项」仍然会发生，这两件事不能混为一谈。\n\nE：最大概率与次大概率的差距（margin）是常用的不确定性信号。差距小说明模型在犹豫，这时转人工比直接执行更稳。\n\n判分边界：所选字母必须与参考答案完全一致。"
+  }
+]

@@ -1,0 +1,87 @@
+[
+  {
+    "id": "ch39-ex01",
+    "chapter": "chapter-39",
+    "type": "code",
+    "difficulty": 3,
+    "minutes": 15,
+    "objective": "Turn letter scores into options and probabilities",
+    "prompt": "The decision flow in this chapter is \"candidate letter scores → softmax probabilities → take the maximum item → map back to the option\". Please implement two functions:\n\n`letter_probabilities(scores)`: `scores` is a dict of `{letter: score}`, return `{letter: probability}` where the probabilities sum to 1; raise `ValueError` on an empty dict.\n\n`choose_option(scores)`: return `(the letter with the highest probability, that letter's probability)`; when scores are tied, return the one with the smallest alphabetical order to guarantee a stable result; raise `ValueError` on an empty dict.",
+    "starter": "import math\n\n\ndef letter_probabilities(scores):\n    # 返回 {字母: 概率}\n    return {}\n\n\ndef choose_option(scores):\n    # 返回 (字母, 概率)\n    return ('', 0.0)\n\nprint(choose_option({'A': 1.0, 'B': 2.0}))\n",
+    "checks": [
+      {
+        "kind": "assert_python",
+        "code": "p = letter_probabilities({'A': 0.0, 'B': 0.0})\nassert abs(sum(p.values()) - 1.0) < 1e-12, p\nassert abs(p['A'] - 0.5) < 1e-12 and abs(p['B'] - 0.5) < 1e-12, p",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "p = letter_probabilities({'A': 1.0, 'B': 2.0, 'C': 3.0})\nassert abs(sum(p.values()) - 1.0) < 1e-12, p\nassert p['C'] > p['B'] > p['A'], p",
+        "weight": 12
+      },
+      {
+        "kind": "assert_python",
+        "code": "p = letter_probabilities({'A': 1000.0, 'B': 0.0})\nassert abs(p['A'] - 1.0) < 1e-9, '大分数不能溢出: %r' % (p,)",
+        "weight": 14
+      },
+      {
+        "kind": "assert_python",
+        "code": "p = letter_probabilities({'A': -1000.0, 'B': 0.0})\nassert p['B'] > 0.999, p",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "letter, prob = choose_option({'A': 0.2, 'B': 0.9, 'C': 0.4})\nassert letter == 'B', letter\nassert abs(prob - letter_probabilities({'A': 0.2, 'B': 0.9, 'C': 0.4})['B']) < 1e-12, prob",
+        "weight": 12
+      },
+      {
+        "kind": "assert_python",
+        "code": "for _scores in ({'A': 1.0, 'B': 1.0}, {'B': 2.0, 'A': 2.0}, {'C': 1.0, 'A': 1.0, 'B': 1.0}):\n    assert choose_option(_scores)[0] == min(_scores), (_scores, choose_option(_scores))",
+        "weight": 14
+      },
+      {
+        "kind": "assert_python",
+        "code": "for _bad in ({}, []):\n    try:\n        letter_probabilities(_bad)\n        assert False, '空输入必须报错'\n    except (ValueError, TypeError):\n        pass\n    try:\n        choose_option(_bad)\n        assert False, '空输入必须报错'\n    except (ValueError, TypeError):\n        pass",
+        "weight": 10
+      },
+      {
+        "kind": "assert_python",
+        "code": "import math\nfor _scores in ({'A': 0.5}, {'A': 2.0, 'B': -1.0}, {'A': 0.0, 'B': 0.0, 'C': 0.0, 'D': 0.0}):\n    _p = letter_probabilities(_scores)\n    _want = {k: math.exp(v - max(_scores.values())) for k, v in _scores.items()}\n    _total = sum(_want.values())\n    _want = {k: v / _total for k, v in _want.items()}\n    for k in _scores:\n        assert abs(_p[k] - _want[k]) < 1e-12, (_scores, k, _p[k], _want[k])",
+        "weight": 18
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "import math\n\n\ndef letter_probabilities(scores):\n    if not scores:\n        raise ValueError('scores must not be empty')\n    top = max(scores.values())\n    weights = {letter: math.exp(value - top) for letter, value in scores.items()}\n    total = sum(weights.values())\n    return {letter: weight / total for letter, weight in weights.items()}\n\n\ndef choose_option(scores):\n    probabilities = letter_probabilities(scores)\n    best = min(probabilities, key=lambda letter: (-probabilities[letter], letter))\n    return best, probabilities[best]\n",
+    "explanation": "This exercise corresponds to the most core piece of code in this chapter: the model only gives scores for candidate letters, and the program must turn the scores into probabilities and then take the maximum item.\n\nThe key to `letter_probabilities` is **numerical stability**. Calling `math.exp(1000)` directly will overflow; subtracting the maximum value first and then taking the exponent leaves the probabilities completely unchanged but avoids overflow. The tests use scores of ±1000 specifically to target this point.\n\nNormalization is also easy to overlook: the numbers after exp are not probabilities and must be divided by the sum. If you only return the exp results, the probabilities will not sum to 1, and downstream code that uses them for threshold judgments will be completely wrong.\n\nThe key to `choose_option` is **determinism**. If, when scores are tied, you rely on dictionary order or the accidental result of floating-point comparison, the same input may give different answers, which is extremely painful to debug. The requirement that the smallest alphabetical order be chosen is a testable convention.\n\nEmpty input must raise an error rather than return an empty result: a decision task with no candidates is the caller's problem, and silently returning would let the error propagate further away.\n\nGrading boundary: the checks assert on behavior and do not compare implementation style; numpy is allowed, but the reference answer uses only the standard library."
+  },
+  {
+    "id": "ch39-ex02",
+    "chapter": "chapter-39",
+    "type": "predict",
+    "difficulty": 1,
+    "minutes": 4,
+    "objective": "Determine what a \"decision model\" can and cannot guarantee",
+    "prompt": "This chapter describes the decision model as \"taking background, question, and candidate options as input, and returning a result and probability\". Which of the following statements are correct? (Multiple choice)\n\nA. Returning probabilities lets the program make threshold judgments, but a high probability does not mean the conclusion is necessarily correct\nB. Candidate options should be mutually exclusive and cover all possibilities; otherwise the model can only pick one among incomplete options\nC. The mapping between letters and options must be consistent with the prompt; otherwise the answer the program retrieves will be mismatched\nD. So-called \"zero hallucination\" means this kind of model cannot possibly choose wrong\nE. After converting scores to probabilities, the gap between the highest and second-highest probability can be used to judge whether manual review is needed",
+    "checks": [
+      {
+        "kind": "output_choice",
+        "correct": [
+          "A",
+          "B",
+          "C",
+          "E"
+        ],
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "D is contrary to what this chapter says: zero hallucination describes the output being constrained within the given candidate options, and does not mean the judgment itself cannot be wrong. The model can still choose wrong; the probability only lets the program know how confident it is.",
+    "explanation": "This chapter makes decisions into a separate interface; the value lies in \"the output can be used directly by the program\", not in \"the output is necessarily correct\".\n\nA: Probability is confidence, not correctness. A probability of 0.99 can still be wrong; it just means the model is very confident. The program can use a threshold to decide whether to escalate to a human.\n\nB: Candidate options are the model's choice space. If options are not mutually exclusive (for example, having both \"refund\" and \"return and refund\"), the model can only pick among overlapping options, and the result cannot be explained; if options omit the real situation, the model can only reluctantly pick one.\n\nC: If the prompt says A is \"check order\" and B is \"change address\", but the code maps them in reverse, then even if the model answers correctly, the program will interpret it wrongly. This is the most common and also the easiest error to test in engineering.\n\nD: Zero hallucination means not giving the model room to generate freely—it can only choose from the candidate options and cannot fabricate a fifth option. But \"choosing the wrong given option\" can still happen; these two things must not be conflated.\n\nE: The gap (margin) between the highest and second-highest probability is a commonly used uncertainty signal. A small gap means the model is hesitating, and at that point escalating to a human is more reliable than executing directly.\n\nGrading boundary: the selected letters must exactly match the reference answer."
+  }
+]

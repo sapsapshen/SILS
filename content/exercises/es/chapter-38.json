@@ -1,0 +1,50 @@
+[
+  {
+    "id": "ch38-ex01",
+    "chapter": "chapter-38",
+    "type": "predict",
+    "difficulty": 1,
+    "minutes": 4,
+    "objective": "Revisar los limites del asistente de inspeccion",
+    "prompt": "Este capítulo limita el asistente de inspección a los «fenómenos superficiales visibles en las fotos». ¿Cuáles de las siguientes prácticas se ajustan al diseño de este capítulo? (Selección múltiple)\n\nA. El modelo determina a partir de la foto si el circuito está dañado y emite una conclusión sobre si es necesario detener la máquina\nB. La salida solo describe los fenómenos visibles en la foto, por ejemplo, la lámpara rota o los objetos dispersos en el suelo\nC. Lo que genera el modelo es un borrador, que solo se guarda después de que el personal lo confirme o lo modifique\nD. Cuando no hay red, se guarda primero localmente en el teléfono y, cuando hay red, se sincroniza con el registro\nE. Se usa el ID de registro para la idempotencia, evitando el envío duplicado del mismo registro",
+    "checks": [
+      {
+        "kind": "output_choice",
+        "correct": [
+          "B",
+          "C",
+          "D",
+          "E"
+        ],
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": false,
+      "criteria": ""
+    },
+    "reference": "A es lo contrario del límite de este capítulo: la primera versión solo trata los fenómenos superficiales que se pueden fotografiar en las zonas comunes, no determina a partir de la foto si el circuito está dañado ni decide la parada, la reparación o el reemplazo del equipo.",
+    "explanation": "Lo primero que hace este capítulo no es elegir un modelo, sino convertir los requisitos en una tarea clara para el modelo:\n\nLa primera versión solo trata los fenómenos superficiales que se pueden fotografiar en las zonas comunes: la lámpara rota, los objetos dispersos en el suelo, las manchas visibles en la pared. No determina a partir de la foto si el circuito está dañado ni decide si es necesario detener la máquina, repararla o reemplazar el equipo. Esto no se debe a que el modelo no sea suficientemente capaz, sino a los límites de responsabilidad: lo que la foto no puede ver, el modelo no debe concluirlo.\n\nB es la formulación positiva de este límite.\n\nC es el límite del producto: el modelo produce un borrador y la persona lo confirma. Los registros de inspección se usarán para el procesamiento posterior, y el costo de un registro erróneo es mayor que el de pulsar una vez más para confirmar.\n\nD es la restricción del lugar: en los puntos de inspección la red suele ser mala, y guardar primero localmente y sincronizar después es un requisito previo para la usabilidad.\n\nE es un problema de corrección de la sincronización: la cola sin conexión reintenta, y sin una clave de idempotencia se enviaría el mismo registro varias veces. Este capítulo dedica una sección específica a «usar el ID de registro para evitar envíos duplicados».\n\nCriterio de puntuación: las letras seleccionadas deben coincidir exactamente con la respuesta de referencia."
+  },
+  {
+    "id": "ch38-ex02",
+    "chapter": "chapter-38",
+    "type": "reflect",
+    "difficulty": 2,
+    "minutes": 10,
+    "objective": "Planificar el manejo de fallos en inspeccion",
+    "prompt": "Continuando con el asistente de inspección de este capítulo, describe cómo tratarías estos tres tipos de fallos: el modelo confunde el reflejo de la foto con una mancha, el teléfono guarda correctamente sin conexión pero falla la sincronización, y la misma foto se envía repetidamente. Para cada tipo debes explicar qué ve el usuario, cómo el sistema cubre la contingencia y con qué métricas determinas que realmente se ha resuelto.",
+    "checks": [
+      {
+        "kind": "self_assessed",
+        "weight": 1
+      }
+    ],
+    "llm_rubric": {
+      "enabled": true,
+      "criteria": "Si se distinguen los tres tipos de problemas: error del modelo, error de red y envío duplicado; si se da a cada tipo un estado visible para el usuario y una acción ejecutable; si se explica la coordinación entre la cola local, el reintento y la clave de idempotencia; si se dan métricas de aceptación cuantificables (tasa de falsos positivos, tasa de éxito de sincronización, tasa de duplicados)"
+    },
+    "reference": "Confusión por reflejo: la salida del modelo es solo un borrador, la interfaz marca la «posible mancha» como pendiente de confirmación y el personal puede cambiarla con un clic a «reflejo/normal»; además se conservan la imagen original y el borrador del modelo para poder rastrear. La aceptación se basa en la tasa de modificaciones manuales y la tasa de falsos positivos, no solo en la confianza del modelo.\n\nFallo de sincronización sin conexión: guardar y sincronizar se dividen en dos estados: «guardado en el dispositivo» y «sincronizado con el registro». Cuando falla la sincronización se muestra claramente el número de pendientes y la hora del último intento, y se ofrece reintento manual; la cola es FIFO y un fallo no bloquea los registros posteriores. La aceptación se basa en la tasa de éxito de sincronización, la latencia media de sincronización y si la cola sigue existiendo tras un corte de energía o la finalización del proceso.\n\nEnvío duplicado: cada registro recibe un ID en el momento de generarse y se incluye al enviarlo; el servidor es idempotente por ID, y una solicitud repetida devuelve el mismo resultado en lugar de crear uno nuevo. El cliente consulta el estado local antes de reintentar para evitar reenvíos a ciegas. La aceptación se basa en la tasa de registros duplicados y el total de registros tras los reintentos.\n\nPrincipio común: los errores del modelo se cubren con «borrador + confirmación humana», los errores de red con «persistencia local + cola reintentable» y los envíos duplicados con «clave de idempotencia». Los tres tipos de problemas no se pueden tapar con un único botón de «reintentar».\n\nPor último, incorpora estas métricas a la aceptación: precisión de campos, tasa de modificaciones manuales, tasa de éxito de sincronización, tasa de duplicados y tiempo desde la foto hasta la sincronización completa de un registro.",
+    "explanation": "Este ejercicio lleva «la demo funciona» a «funciona en el lugar».\n\nLos tres tipos de fallos tienen naturalezas completamente distintas y no se pueden tratar con la misma táctica:\n\n- La confusión del modelo es un **error cognitivo**, y la contingencia solo puede recaer en la persona. Por eso el borrador debe ser editable y deben conservarse la imagen original y la salida original del modelo; de lo contrario, no se puede revisar qué pasó.\n- El fallo de sincronización es un **error de estado**, y la contingencia se basa en la persistencia y el reintento. La clave es mostrar por separado «guardado» y «sincronizado»: si la interfaz solo tiene un «éxito», el usuario creerá que los datos ya están en el registro.\n- El envío duplicado es un **error de protocolo**, y la contingencia se basa en la clave de idempotencia. Este capítulo usa el ID de registro con esta idea: se permite reintentar, pero no se permite duplicar en la base de datos.\n\nLas métricas de aceptación deben poder refutar. No basta con ver «tasa de éxito de sincronización del 99%»; también hay que ver si el usuario conoce el 1% que falla y si puede recuperarse por sí mismo; no basta con ver «tasa de duplicados baja»; también hay que ver si sigue sin duplicarse bajo una tormenta de reintentos.\n\nEste ejercicio no tiene una respuesta única; la puntuación evalúa si se tratan por separado los tres tipos, si hay estados visibles para el usuario y si hay una aceptación cuantificable."
+  }
+]
