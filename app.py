@@ -359,6 +359,40 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
         migrate_exercise_progress(conn)
         if 'role' not in {row['name'] for row in conn.execute('PRAGMA table_info(users)')}:
             conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'reader'")
+        # An earlier `leads` table with a narrower shape may already exist on a
+        # deployed host; CREATE TABLE IF NOT EXISTS will not widen it, and the
+        # insert then fails with "no column named source".
+        lead_columns = {row['name'] for row in conn.execute('PRAGMA table_info(leads)')}
+        for column, ddl in (
+            ('org', "org TEXT NOT NULL DEFAULT ''"),
+            ('size', "size TEXT NOT NULL DEFAULT ''"),
+            ('interest', "interest TEXT NOT NULL DEFAULT 'other'"),
+            ('note', "note TEXT NOT NULL DEFAULT ''"),
+            ('source', "source TEXT NOT NULL DEFAULT ''"),
+            ('status', "status TEXT NOT NULL DEFAULT 'new'"),
+            ('visitor_hash', "visitor_hash TEXT NOT NULL DEFAULT ''"),
+        ):
+            if column not in lead_columns:
+                conn.execute(f'ALTER TABLE leads ADD COLUMN {ddl}')
+        conn.execute('CREATE INDEX IF NOT EXISTS leads_created ON leads(created)')
+        conn.execute('CREATE INDEX IF NOT EXISTS leads_visitor ON leads(visitor_hash, created)')
+        # An earlier `leads` table with a narrower shape may already exist on a
+        # deployed host; CREATE TABLE IF NOT EXISTS will not widen it, and the
+        # insert then fails with "no column named source".
+        lead_columns = {row['name'] for row in conn.execute('PRAGMA table_info(leads)')}
+        for column, ddl in (
+            ('org', "org TEXT NOT NULL DEFAULT ''"),
+            ('size', "size TEXT NOT NULL DEFAULT ''"),
+            ('interest', "interest TEXT NOT NULL DEFAULT 'other'"),
+            ('note', "note TEXT NOT NULL DEFAULT ''"),
+            ('source', "source TEXT NOT NULL DEFAULT ''"),
+            ('status', "status TEXT NOT NULL DEFAULT 'new'"),
+            ('visitor_hash', "visitor_hash TEXT NOT NULL DEFAULT ''"),
+        ):
+            if column not in lead_columns:
+                conn.execute(f'ALTER TABLE leads ADD COLUMN {ddl}')
+        conn.execute('CREATE INDEX IF NOT EXISTS leads_created ON leads(created)')
+        conn.execute('CREATE INDEX IF NOT EXISTS leads_visitor ON leads(visitor_hash, created)')
 
     @contextmanager
     def analytics_db():
