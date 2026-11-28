@@ -1618,12 +1618,13 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
         language={'en':'English','es':'Español'}.get(payload.language[:2],'简体中文')
         system=(f'你是《超智学习空间》的助教。只根据下面的章节原文回答，不要补充原文没有的事实。'
                 f'原文没有答案时，直接说“这一章没有讲”，并建议读者看哪一章。'
+                f'原文没有出现的数字、公司名、论文名和实验结果一律不得写；需要举例时用原文已有的例子。'
                 f'回答控制在 250 字以内，用{language}回答。\n\n章节原文：\n{context or "（无）"}')
         try:
             ask_limiter.fail('ip:'+address)
             response=httpx.post(base.rstrip('/')+'/chat/completions',
                 headers={'Authorization':f'Bearer {key}'},
-                json={'model':os.getenv('EXERCISE_LLM_MODEL','gpt-4o-mini'),'temperature':0.2,
+                json={'model':os.getenv('EXERCISE_LLM_MODEL','gpt-4o-mini'),'temperature':0,
                       'messages':[{'role':'system','content':system},{'role':'user','content':question}]},
                 timeout=30)
             if response.status_code//100!=2: raise RuntimeError(f'LLM {response.status_code}')
