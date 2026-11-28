@@ -363,6 +363,39 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
         # deployed host; CREATE TABLE IF NOT EXISTS will not widen it, and the
         # insert then fails with "no column named source".
         lead_columns = {row['name'] for row in conn.execute('PRAGMA table_info(leads)')}
+        if 'email_hash' in lead_columns:
+            # A pre-release design keyed leads by an email hash and made it NOT
+            # NULL. If it holds no rows, replace it with the current shape;
+            # otherwise keep it and let the insert fill the column.
+            if conn.execute('SELECT count(*) FROM leads').fetchone()[0] == 0:
+                conn.execute('DROP TABLE leads')
+                conn.execute('''CREATE TABLE leads(id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL,
+                  org TEXT NOT NULL DEFAULT '', size TEXT NOT NULL DEFAULT '', interest TEXT NOT NULL DEFAULT 'other',
+                  note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'new',
+                  visitor_hash TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL)''')
+                lead_columns = {row['name'] for row in conn.execute('PRAGMA table_info(leads)')}
+        if 'email_hash' in lead_columns:
+            # A pre-release design keyed leads by an email hash and made it NOT
+            # NULL. If it holds no rows, replace it with the current shape;
+            # otherwise keep it and let the insert fill the column.
+            if conn.execute('SELECT count(*) FROM leads').fetchone()[0] == 0:
+                conn.execute('DROP TABLE leads')
+                conn.execute('''CREATE TABLE leads(id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL,
+                  org TEXT NOT NULL DEFAULT '', size TEXT NOT NULL DEFAULT '', interest TEXT NOT NULL DEFAULT 'other',
+                  note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'new',
+                  visitor_hash TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL)''')
+                lead_columns = {row['name'] for row in conn.execute('PRAGMA table_info(leads)')}
+        if 'email_hash' in lead_columns:
+            # A pre-release design keyed leads by an email hash and made it NOT
+            # NULL. If it holds no rows, replace it with the current shape;
+            # otherwise keep it and let the insert fill the column.
+            if conn.execute('SELECT count(*) FROM leads').fetchone()[0] == 0:
+                conn.execute('DROP TABLE leads')
+                conn.execute('''CREATE TABLE leads(id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL,
+                  org TEXT NOT NULL DEFAULT '', size TEXT NOT NULL DEFAULT '', interest TEXT NOT NULL DEFAULT 'other',
+                  note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'new',
+                  visitor_hash TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL)''')
+                lead_columns = {row['name'] for row in conn.execute('PRAGMA table_info(leads)')}
         for column, ddl in (
             ('org', "org TEXT NOT NULL DEFAULT ''"),
             ('size', "size TEXT NOT NULL DEFAULT ''"),
@@ -380,6 +413,39 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
         # deployed host; CREATE TABLE IF NOT EXISTS will not widen it, and the
         # insert then fails with "no column named source".
         lead_columns = {row['name'] for row in conn.execute('PRAGMA table_info(leads)')}
+        if 'email_hash' in lead_columns:
+            # A pre-release design keyed leads by an email hash and made it NOT
+            # NULL. If it holds no rows, replace it with the current shape;
+            # otherwise keep it and let the insert fill the column.
+            if conn.execute('SELECT count(*) FROM leads').fetchone()[0] == 0:
+                conn.execute('DROP TABLE leads')
+                conn.execute('''CREATE TABLE leads(id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL,
+                  org TEXT NOT NULL DEFAULT '', size TEXT NOT NULL DEFAULT '', interest TEXT NOT NULL DEFAULT 'other',
+                  note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'new',
+                  visitor_hash TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL)''')
+                lead_columns = {row['name'] for row in conn.execute('PRAGMA table_info(leads)')}
+        if 'email_hash' in lead_columns:
+            # A pre-release design keyed leads by an email hash and made it NOT
+            # NULL. If it holds no rows, replace it with the current shape;
+            # otherwise keep it and let the insert fill the column.
+            if conn.execute('SELECT count(*) FROM leads').fetchone()[0] == 0:
+                conn.execute('DROP TABLE leads')
+                conn.execute('''CREATE TABLE leads(id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL,
+                  org TEXT NOT NULL DEFAULT '', size TEXT NOT NULL DEFAULT '', interest TEXT NOT NULL DEFAULT 'other',
+                  note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'new',
+                  visitor_hash TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL)''')
+                lead_columns = {row['name'] for row in conn.execute('PRAGMA table_info(leads)')}
+        if 'email_hash' in lead_columns:
+            # A pre-release design keyed leads by an email hash and made it NOT
+            # NULL. If it holds no rows, replace it with the current shape;
+            # otherwise keep it and let the insert fill the column.
+            if conn.execute('SELECT count(*) FROM leads').fetchone()[0] == 0:
+                conn.execute('DROP TABLE leads')
+                conn.execute('''CREATE TABLE leads(id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL,
+                  org TEXT NOT NULL DEFAULT '', size TEXT NOT NULL DEFAULT '', interest TEXT NOT NULL DEFAULT 'other',
+                  note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'new',
+                  visitor_hash TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL)''')
+                lead_columns = {row['name'] for row in conn.execute('PRAGMA table_info(leads)')}
         for column, ddl in (
             ('org', "org TEXT NOT NULL DEFAULT ''"),
             ('size', "size TEXT NOT NULL DEFAULT ''"),
@@ -1238,10 +1304,20 @@ def create_app(data_dir=None, analytics_runtime_dir=None):
                 # what a human sends; past that it is a script and the form is
                 # not the place to argue with it.
                 if recent>=5: raise HTTPException(429,'提交太频繁，请稍后再试')
-                conn.execute('''INSERT INTO leads(id,name,email,org,size,interest,note,source,status,visitor_hash,created)
-                                VALUES (?,?,?,?,?,?,?,?,'new',?,?)''',
-                             (lid,name,email,lead.org.strip()[:160],lead.size.strip()[:32],
-                              lead.interest.strip()[:32] or 'other',note,source,visitor_hash,now))
+                # Older rows may carry a NOT NULL email_hash from the first
+                # iteration of this table; fill it when the column exists.
+                columns={row['name'] for row in conn.execute('PRAGMA table_info(leads)')}
+                if 'email_hash' in columns:
+                    email_hash=hmac.new(session_secret.encode(),('lead-email:'+email).encode(),hashlib.sha256).hexdigest()
+                    conn.execute('''INSERT INTO leads(id,name,email,email_hash,org,size,interest,note,source,status,visitor_hash,created)
+                                    VALUES (?,?,?,?,?,?,?,?,?,'new',?,?)''',
+                                 (lid,name,email,email_hash,lead.org.strip()[:160],lead.size.strip()[:32],
+                                  lead.interest.strip()[:32] or 'other',note,source,visitor_hash,now))
+                else:
+                    conn.execute('''INSERT INTO leads(id,name,email,org,size,interest,note,source,status,visitor_hash,created)
+                                    VALUES (?,?,?,?,?,?,?,?,'new',?,?)''',
+                                 (lid,name,email,lead.org.strip()[:160],lead.size.strip()[:32],
+                                  lead.interest.strip()[:32] or 'other',note,source,visitor_hash,now))
         except sqlite3.OperationalError as error:
             if not readonly_write_failure(error): raise
             return write_unavailable()
